@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+
+# Recorded runs (commit curated ones explicitly with -f if wanted)
+runs/
+
+# Arduino / grot
+build/
+.grotconfig
+
+# OS
+.DS_Store
+
+# Claude Code local settings
+.claude/
