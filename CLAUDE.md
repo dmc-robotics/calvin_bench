@@ -1,6 +1,6 @@
 # Calvin Bench
 
-Big picture (systems, wiring, working rules): see `../CLAUDE.md`.
+Calvin is a robotics project contained in `~/code/robotics/calvin/`. See `~/code/robotics/calvin/CLAUDE.md` for project level information. This file is for `calvin_bench` infromation only.
 
 Actuator characterization. The bench measures each drive actuator (Teensy CAN command → ODrive S1 → D5312s → 4:1 belt → wheel) and produces `actuator.yaml`, the input to the first LQR design and later an RL policy. This repo only measures; controller design happens elsewhere.
 
@@ -30,11 +30,6 @@ calvin_bench/
 - pyenv 3.12: `python -m venv .venv && source .venv/bin/activate && pip install -e .`, then `bench --help`.
 
 ## Bench safety (on top of the root rules)
-
 - Keep torque limits small until the user raises them.
-- Battery power for anything that accelerates and then brakes: a bench supply can't absorb regenerated energy.
-- Each experiment's `instructions/` file says what physical configuration it needs (bench fixture vs robot on a stand, belt on or off, which firmware).
+- Do not move motors without user permission.
 
-## Code style
-
-C++ follows instinctus: `PascalCase` classes, `camelCase` methods, `_camelCase` private members, `UPPER_SNAKE_CASE` constants.
