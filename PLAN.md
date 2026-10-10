@@ -57,7 +57,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 
 **Needed for LQR**
 1. ODrive setup and frozen config (M0).
-2. Static torque gain: lever arm on a scale → G. Both directions, ~5 torque levels each, arm at the wheel; fit a line per direction (slope = G, intercept = friction/offset). Subtract the arm's resting weight; keep stall holds short.
+2. Static torque gain: lever arm on the motor shaft, on a scale → k, then G = 4 × k. Both directions, ~5 torque levels each; fit a line per direction (slope = k, intercept ≈ cogging at the arm's angle, not friction). Tare before and after; keep stall holds short. `bench static-gain record` / `analyze`.
 3. Steady-state friction: velocity sweep, both directions → b, τ_c, stiction.
 4. Constant-torque acceleration and coast-down → J.
 5. Chirp torque, wheel off the ground → J, b, τ_d, any belt resonance.
