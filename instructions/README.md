@@ -5,7 +5,7 @@ One file per experiment from `../PLAN.md`. Each says what it measures, what you 
 | # | File | Gives | Needs |
 |---|---|---|---|
 | 1 | [01-odrive-setup.md](01-odrive-setup.md) | Frozen ODrive configuration | odrivetool (M0) |
-| 2 | [02-static-torque-gain.md](02-static-torque-gain.md) | Real torque per commanded torque → G (× belt ratio) | odrivetool (M0) |
+| 2 | [02-static-torque-gain.md](02-static-torque-gain.md) | Real torque per commanded torque → G (× belt ratio) | `bench static-gain` over ODrive USB (M0) |
 | 3 | [03-friction-sweep.md](03-friction-sweep.md) | Viscous, Coulomb and static friction | odrivetool (rough, M0) or bench (M3+) |
 | 4 | [04-acceleration-coastdown.md](04-acceleration-coastdown.md) | Actuator inertia J | bench (M3+) |
 | 5 | [05-chirp.md](05-chirp.md) | Frequency response: J, b, delay, resonance | bench (M3+) |
@@ -62,4 +62,4 @@ Attribute names below are for ODrive firmware 0.6.x and may differ slightly in y
 
 ## Tooling status
 
-The `bench` CLI is built in milestone M3 (see `../PLAN.md`). Until then, experiments 1–3 run from odrivetool. Instructions that need the bench describe the waveform and settings; whoever implements the CLI defines the actual command names and should update these files.
+The `bench` CLI is built in milestone M3 (see `../PLAN.md`). Until then, experiments 1 and 3 run from odrivetool, and experiment 2 uses `bench static-gain record` / `analyze` over the ODrive's USB. Instructions that need the bench describe the waveform and settings; whoever implements the CLI defines the actual command names and should update these files.
