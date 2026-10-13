@@ -29,6 +29,13 @@ calvin_bench/
 
 - Python 3.15 (`.python-version`), managed with uv: `uv sync`, then `uv run bench --help`.
 
+## Scale (experiment 2)
+
+OHAUS Adventurer AX8201/E, 0.1 g, read by `bench static-gain record --scale <port>` (`Scale` in `bench/static_gain.py`).
+- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). It's an FTDI serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY`, 9600 baud, 8N1.
+- ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` (`?` = unstable) then blank lines; `PV` → `Sr 1.06`; `PSN` → `Balance ID: B816716802`.
+- ~90 ms per reply, ~8 readings/s when polled. Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
+
 ## Bench safety (on top of the root rules)
 - Keep torque limits small until the user raises them.
 - Do not move motors without user permission.
