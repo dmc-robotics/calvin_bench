@@ -30,10 +30,10 @@ def main():
     parser = argparse.ArgumentParser(prog="bench", description="Calvin actuator characterization")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    run_parser = subcommands.add_parser("run", help="run an experiment on the bench (M3)")
+    run_parser = subcommands.add_parser("run", help="run an experiment on the bench")
     run_parser.add_argument("experiment")
 
-    plot_parser = subcommands.add_parser("plot", help="plot a recorded run (M3)")
+    plot_parser = subcommands.add_parser("plot", help="plot a recorded run")
     plot_parser.add_argument("run_directory")
 
     static_gain_parser = subcommands.add_parser("static-gain", help="experiment 2: static torque gain (lever arm + scale)")

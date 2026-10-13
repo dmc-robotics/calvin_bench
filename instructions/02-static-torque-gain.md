@@ -19,7 +19,7 @@ So G ≈ 4, and the experiment tells you how far from 4.
 - **Power:** Battery
 
 ## Equipment
-- Kitchen scale (grams); a rigid lever arm, ~0.2 m; something to raise the scale to shaft height.
+- Kitchen scale (grams); a rigid lever arm
 - Clamp point: the motor's free shaft end.
 - Ruler or calipers.
 
@@ -30,7 +30,7 @@ So G ≈ 4, and the experiment tells you how far from 4.
 4. With the motor idle, read the scale: this is the **tare**, the arm's resting weight.
 
 ## Procedure
-Recorded with `bench static-gain record`. It talks to the ODrive over USB, so close odrivetool first.
+Recorded with `bench static-gain record`. It talks to the ODrive over USB, so close `odrivetool` first.
 
 ```sh
 bench static-gain record --motor left --arm-length 0.200
@@ -76,11 +76,6 @@ Without the script the same procedure works by hand in odrivetool: type the rows
 7. **Stiction (optional, Procedure step 5):** at each level, half the difference between the from-above and from-below torques is the static friction torque.
 
 **Record:** the run folder holds it all: `L` in `meta.json`, temperatures in `data.csv`, the ODrive config (including anticogging) in `odrive_config.json`; `k₊`, `k₋`, `k`, `G`, `Kt`, `c₊`, `c₋`, residuals and stiction in `results.json`.
-
-## Pitfalls
-- An arm that isn't level changes the effective length (cos error); within ±5° it's negligible.
-- Belt stretch: the arm may creep as torque rises. Read once it has settled.
-- Scales drift when warm or heavily loaded. Re-tare between directions.
 
 ## Done when
 A `G` for each direction, close to each other (within a few %), with sensible residuals.
