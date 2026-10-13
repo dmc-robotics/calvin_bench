@@ -1,7 +1,7 @@
 """Experiment 2: static torque gain. A lever arm on the motor shaft pushes on a scale.
 
-`record` drives the ODrive over its USB (no Teensy). It reads the OHAUS balance over its USB (`--scale`, see `Scale`)
-or, without one, prompts for the readings. `analyze` follows the Analysis section of instructions/02-static-torque-gain.md.
+`record` drives the ODrive over its USB (no Teensy). It reads the OHAUS balance over its USB (see `Scale`)
+or, with `--no-scale`, prompts for the readings. `analyze` follows the Analysis section of instructions/02-static-torque-gain.md.
 """
 import csv
 import json

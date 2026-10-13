@@ -34,10 +34,10 @@ So G ≈ 4, and the experiment tells you how far from 4.
 Recorded with `bench static-gain record`. It talks to the ODrive over USB, so close `odrivetool` first.
 
 ```sh
-bench static-gain record --motor left --arm-length 0.200 --scale /dev/cu.usbserial-DN04KNBY
+bench static-gain record --motor left --arm-length 0.200
 ```
 
-The balance's port is the `/dev/cu.usbserial-*` that appears when you plug it in. Set it to grams. Without `--scale`, the script asks you to type each reading.
+It reads the balance on `/dev/cu.usbserial-DN04KNBY`, named after the balance's own USB chip, so it doesn't change; `--scale <port>` overrides it. Set the balance to grams. With `--no-scale`, the script asks you to type each reading instead.
 
 Before anything moves, the script checks the ODrive and refuses to start if:
 - the node ID doesn't match `--motor` (left 1, right 2), so it can't drive the wrong ODrive;
@@ -52,7 +52,7 @@ While it runs:
 
 1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 4).
 2. It steps through the levels: 0.05, 0.10, 0.15, 0.20, 0.25 N·m motor-side by default (`--levels` changes them; at least 3). That's ≈ 2–10 A; with a 0.2 m arm it's roughly 25–130 g on the scale, so a 1 g scale gives a few % at the low end and better above.
-3. At each level it arms the motor, holds the torque for 2.5 s, then idles. It polls the balance through the hold (~8 readings/s) and averages the last second. Unstable readings count too, since the motor may keep the balance from ever settling. It prints the mean ± standard deviation and how many readings were stable. Without `--scale`, watch the scale and type the reading at the end of the hold; `r` repeats the level.
+3. At each level it arms the motor, holds the torque for 2.5 s, then idles. It polls the balance through the hold (~8 readings/s) and averages the last second. Unstable readings count too, since the motor may keep the balance from ever settling. It prints the mean ± standard deviation and how many readings were stable. With `--no-scale`, watch the scale and type the reading at the end of the hold; `r` repeats the level.
 4. After the last level it reads the tare again.
 5. **Other direction:** move the scale to the other side of the axle (or flip the arm), confirm, and repeat from the tare.
 6. Optional: `--from-above` adds a second pass per direction that approaches each level from 0.05 N·m higher. The difference shows static friction (hysteresis). The top level then reaches 0.30 N·m, so it also needs `--max-torque 0.3`.
@@ -61,7 +61,7 @@ Each run goes to `runs/<timestamp>_static-gain_<motor>/`:
 - `meta.json`: settings fixed at the start (arm length, levels, ODrive serial and firmware, node ID, configured `torque_constant`, velocity cap, the balance's port, ID and firmware or `manual`). Written once.
 - `odrive_config.json`: the full ODrive config, as `odrivetool backup-config` would save it.
 - `data.csv`: every measurement, one row each, appended as it's taken. Columns `direction, approach, torque_command_Nm, scale_g, scale_std_g, scale_samples, scale_stable_samples, iq_setpoint_A, iq_measured_A, vbus_V, fet_temperature_C, motor_temperature_C`. `approach` is `tare` (motor idle, command 0, the Iq and vbus columns empty), `below` or `above`. `scale_g` is the mean over the last second; the spread and counts are empty for typed readings.
-- `scale.csv` (with `--scale`): every balance reading, `direction, approach, torque_command_Nm, time_s, scale_g, stable`. `time_s` counts from when the torque was applied (negative during a from-above overshoot). Use it to check the balance settles before the averaged last second.
+- `scale.csv` (not with `--no-scale`): every balance reading, `direction, approach, torque_command_Nm, time_s, scale_g, stable`. `time_s` counts from when the torque was applied (negative during a from-above overshoot). Use it to check the balance settles before the averaged last second.
 
 Without the script the same procedure works by hand in odrivetool: type the rows into `data.csv` and write `meta.json` with at least `arm_length_m` and `torque_constant_NmA`.
 

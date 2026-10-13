@@ -31,8 +31,8 @@ calvin_bench/
 
 ## Scale (experiment 2)
 
-OHAUS Adventurer AX8201/E, 0.1 g, read by `bench static-gain record --scale <port>` (`Scale` in `bench/static_gain.py`).
-- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). It's an FTDI serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY`, 9600 baud, 8N1.
+OHAUS Adventurer AX8201/E, 0.1 g, read by `bench static-gain record` (`Scale` in `bench/static_gain.py`; `--no-scale` to type readings).
+- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; the `--scale` default), 9600 baud, 8N1.
 - ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` (`?` = unstable) then blank lines; `PV` → `Sr 1.06`; `PSN` → `Balance ID: B816716802`.
 - ~90 ms per reply, ~8 readings/s when polled. Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
 

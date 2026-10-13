@@ -3,6 +3,8 @@ import argparse
 import math
 
 DEFAULT_STATIC_GAIN_LEVELS = [0.05, 0.10, 0.15, 0.20, 0.25]
+# Named after the serial number of the FTDI chip inside the balance, so it stays the same across replugs and USB sockets.
+DEFAULT_SCALE_PORT = "/dev/cu.usbserial-DN04KNBY"
 
 
 def positive_number(text):
@@ -48,7 +50,8 @@ def main():
     )
     record_parser.add_argument("--from-above", action="store_true", help="add a pass approaching each level from above (stiction)")
     record_parser.add_argument("--max-torque", type=positive_number, default=0.25, help="refuse levels above this, N·m (default: %(default)s)")
-    record_parser.add_argument("--scale", metavar="PORT", help="read the OHAUS balance on this port, e.g. /dev/cu.usbserial-DN04KNBY (default: type the readings)")
+    record_parser.add_argument("--scale", metavar="PORT", default=DEFAULT_SCALE_PORT, help="the OHAUS balance's port (default: %(default)s)")
+    record_parser.add_argument("--no-scale", action="store_true", help="type the scale readings instead")
 
     analyze_parser = static_gain_actions.add_parser("analyze", help="fit k and G, write results.json and plot.png")
     analyze_parser.add_argument("run_directory")
@@ -62,7 +65,8 @@ def main():
         if arguments.action == "record":
             try:
                 static_gain.record(
-                    arguments.motor, arguments.arm_length, arguments.levels, arguments.from_above, arguments.max_torque, arguments.scale
+                    arguments.motor, arguments.arm_length, arguments.levels, arguments.from_above, arguments.max_torque,
+                    None if arguments.no_scale else arguments.scale,
                 )
             except KeyboardInterrupt:
                 parser.exit(1, "\nInterrupted. Motor idled.\n")
