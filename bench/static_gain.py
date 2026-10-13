@@ -1,17 +1,19 @@
-"""Experiment 2: static torque gain. A lever arm on the motor shaft pushes on a kitchen scale.
+"""Experiment 2: static torque gain. A lever arm on the motor shaft pushes on a scale.
 
-`record` drives the ODrive over its USB (no Teensy) and prompts for the scale readings.
-`analyze` follows the Analysis section of instructions/02-static-torque-gain.md.
+`record` drives the ODrive over its USB (no Teensy). It reads the OHAUS balance over its USB (`--scale`, see `Scale`)
+or, without one, prompts for the readings. `analyze` follows the Analysis section of instructions/02-static-torque-gain.md.
 """
 import csv
 import json
 import math
+import re
 import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import odrive
+import serial
 from odrive.enums import AxisState, ControlMode, InputMode
 from odrive.utils import backup_config, dump_errors
 
@@ -21,7 +23,7 @@ EXPERIMENT = "static-gain"
 DIRECTIONS = {"positive": 1.0, "negative": -1.0}
 MOTOR_NODE_IDS = {"left": 1, "right": 2}
 CSV_COLUMNS = [
-    "direction", "approach", "torque_command_Nm", "scale_g",
+    "direction", "approach", "torque_command_Nm", "scale_g", "scale_std_g", "scale_samples", "scale_stable_samples",
     "iq_setpoint_A", "iq_measured_A", "vbus_V", "fet_temperature_C", "motor_temperature_C",
 ]
 
@@ -48,15 +50,104 @@ TARE_DRIFT_LIMIT_G = 2.0
 CURRENT_MISMATCH_LIMIT = 0.02
 MINIMUM_LEVELS = 3
 
+SCALE_CSV_COLUMNS = ["direction", "approach", "torque_command_Nm", "time_s", "scale_g", "stable"]
+
 COLORS = {"positive": "#2a78d6", "negative": "#eb6834"}
 
 
-def record(motor, arm_length, levels, from_above, max_torque):
+class Scale:
+    """OHAUS Adventurer AX8201/E balance (0.1 g) on its USB Device port, the square USB-B socket (USB Host is for flash drives).
+
+    The USB side is an FTDI serial bridge, so macOS needs no driver: /dev/cu.usbserial-*, 9600 baud, 8N1.
+    Commands are ASCII lines ending in CR LF:
+      IP   weight now, stable or not: "       32.2     g ?" ("?" = unstable), then a few blank lines
+      PV   firmware version: "Sr 1.06"
+      PSN  balance ID: "Balance ID: B816716802"
+    A weight reply takes ~90 ms, so polling gives ~8 readings/s. `poll` never blocks: the hold loop has to keep
+    feeding the ODrive watchdog every LOOP_PERIOD.
+    """
+
+    BAUD = 9600
+    REPLY_TIMEOUT_S = 1.0
+    WEIGHT = re.compile(r"^(-?)\s*(\d+\.?\d*)\s+(\S+)\s*(\?)?$")
+
+    def __init__(self, port):
+        try:
+            self._serial = serial.Serial(port, self.BAUD, timeout=0)
+        except serial.SerialException as error:
+            raise SystemExit(f"Can't open the scale on {port}: {error}")
+        self.port = port
+        self._buffer = b""
+        self._requested_at = None
+        self.firmware = self._query(b"PV")
+        self.balance_id = self._query(b"PSN").partition(":")[2].strip()
+        if self._parse(self._query(b"IP")) is None:
+            raise SystemExit("The scale's weight reply didn't parse.")
+
+    def poll(self):
+        """Request a weight if none is pending. Returns the readings that have arrived, as (grams, stable)."""
+        readings = [reading for reading in map(self._parse, self._read_lines()) if reading is not None]
+        if readings:
+            self._requested_at = None
+        now = time.monotonic()
+        if self._requested_at is None or now - self._requested_at > self.REPLY_TIMEOUT_S:
+            self._serial.write(b"IP\r\n")
+            self._requested_at = now
+        return readings
+
+    def sample(self, seconds):
+        """Poll for `seconds`. Returns (time, grams, stable), time from the start."""
+        self.clear()
+        start = time.monotonic()
+        readings = []
+        while time.monotonic() - start < seconds:
+            readings += [(time.monotonic() - start, grams, stable) for grams, stable in self.poll()]
+            time.sleep(LOOP_PERIOD)
+        return readings
+
+    def clear(self):
+        """Drop stale replies, e.g. one still in flight when the last hold ended."""
+        self._serial.reset_input_buffer()
+        self._buffer = b""
+        self._requested_at = None
+
+    def _query(self, command):
+        self.clear()
+        self._serial.write(command + b"\r\n")
+        end = time.monotonic() + self.REPLY_TIMEOUT_S
+        while time.monotonic() < end:
+            lines = self._read_lines()
+            if lines:
+                return lines[0]
+            time.sleep(LOOP_PERIOD)
+        raise SystemExit(f"No reply from the scale on {self.port}. Is it on, and is this its port?")
+
+    def _read_lines(self):
+        self._buffer += self._serial.read(self._serial.in_waiting)
+        *lines, self._buffer = self._buffer.split(b"\n")
+        return [text for text in (line.decode("ascii", "replace").strip() for line in lines) if text]
+
+    def _parse(self, line):
+        match = self.WEIGHT.match(line)
+        if match is None:
+            return None
+        sign, value, unit, unstable = match.groups()
+        if unit != "g":
+            raise SystemExit(f"The scale is reading in {unit}. Switch it to grams.")
+        return float(sign + value), unstable is None
+
+
+def record(motor, arm_length, levels, from_above, max_torque, scale_port):
     highest = max(levels) + (OVERSHOOT_NM if from_above else 0)
     if highest > max_torque:
         raise SystemExit(
             f"Levels reach {highest:.3f} N·m, above --max-torque {max_torque:.3f} N·m. Raise --max-torque deliberately if you mean it."
         )
+
+    scale = None
+    if scale_port:
+        scale = Scale(scale_port)
+        print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
 
     print("Connecting to the ODrive over USB...")
     odrive_device = odrive.find_sync(timeout=10)
@@ -88,10 +179,15 @@ def record(motor, arm_length, levels, from_above, max_torque):
             "node_id": axis.config.can.node_id,
             "torque_constant_NmA": axis.config.motor.torque_constant,
             "velocity_cap_rev_per_s": velocity_cap,
+            "scale": {"port": scale.port, "balance_id": scale.balance_id, "firmware": scale.firmware} if scale else "manual",
         })
         data_path = run_directory / "data.csv"
         with data_path.open("w", newline="") as file:
             csv.writer(file).writerow(CSV_COLUMNS)
+        scale_path = run_directory / "scale.csv"
+        if scale:
+            with scale_path.open("w", newline="") as file:
+                csv.writer(file).writerow(SCALE_CSV_COLUMNS)
         print(f"Recording to {run_directory}")
 
         original_velocity_limit = axis.controller.config.vel_limit
@@ -103,7 +199,7 @@ def record(motor, arm_length, levels, from_above, max_torque):
             prompt = f"\n{direction.capitalize()} direction: scale placed so {direction} torque pushes the arm onto it? [y/N] "
             if input(prompt).strip().lower() != "y":
                 raise SystemExit("Aborted.")
-            record_tare(data_path, direction, axis)
+            record_tare(data_path, scale_path, direction, axis, scale)
             for approach in approaches:
                 for level in levels:
                     torque = sign * level
@@ -111,15 +207,20 @@ def record(motor, arm_length, levels, from_above, max_torque):
                     while reading is None:
                         temperatures = wait_until_cool(axis)
                         time.sleep(max(0.0, last_hold_end + REST_SECONDS - time.monotonic()))
-                        iq_setpoint, iq_measured, vbus = hold(odrive_device, torque, approach)
+                        iq_setpoint, iq_measured, vbus, scale_readings = hold(odrive_device, torque, approach, scale)
                         last_hold_end = time.monotonic()
-                        reading = ask_grams(f"{torque:+.3f} N·m ({approach}): scale reading (g), r to repeat: ", allow_repeat=True)
+                        label = f"{torque:+.3f} N·m ({approach})"
+                        if scale:
+                            append_scale_readings(scale_path, direction, approach, torque, scale_readings)
+                            reading = settled_reading(scale_readings) or ask_reading(f"{label}: no scale readings. Type it (g), r to repeat: ", allow_repeat=True)
+                        else:
+                            reading = ask_reading(f"{label}: scale reading (g), r to repeat: ", allow_repeat=True)
                     append_row(data_path, [
-                        direction, approach, torque, reading, f"{iq_setpoint:.4f}", f"{iq_measured:.4f}", f"{vbus:.3f}",
+                        direction, approach, torque, *reading, f"{iq_setpoint:.4f}", f"{iq_measured:.4f}", f"{vbus:.3f}",
                         temperatures["fet"], temperatures["motor"],
                     ])
-                    print(f"  Iq {iq_measured:+.2f} A, {format_temperatures(temperatures)}")
-            record_tare(data_path, direction, axis, again=True)
+                    print(f"  {label}: {format_reading(reading)}, Iq {iq_measured:+.2f} A, {format_temperatures(temperatures)}")
+            record_tare(data_path, scale_path, direction, axis, scale, again=True)
     finally:
         stop(axis)
         if original_velocity_limit is not None:
@@ -162,10 +263,43 @@ def check_device(odrive_device, motor, highest_torque):
     return velocity_cap
 
 
-def record_tare(data_path, direction, axis, again=False):
-    grams = ask_grams(f"Motor idle. Tare reading{' again' if again else ''} (g): ")
+def record_tare(data_path, scale_path, direction, axis, scale, again=False):
+    reading = None
+    if scale:
+        print(f"Motor idle. Reading the tare{' again' if again else ''} for {HOLD_SECONDS} s...")
+        scale_readings = scale.sample(HOLD_SECONDS)
+        append_scale_readings(scale_path, direction, "tare", 0, scale_readings)
+        reading = settled_reading(scale_readings)
+        if reading:
+            print(f"  Tare {format_reading(reading)}")
+    if reading is None:
+        reading = ask_reading(f"Motor idle. Tare reading{' again' if again else ''} (g): ")
     current_temperatures = temperatures(axis)
-    append_row(data_path, [direction, "tare", 0, grams, "", "", "", current_temperatures["fet"], current_temperatures["motor"]])
+    append_row(data_path, [direction, "tare", 0, *reading, "", "", "", current_temperatures["fet"], current_temperatures["motor"]])
+
+
+def settled_reading(scale_readings):
+    """Mean, spread and counts of the readings in the last SAMPLE_SECONDS of a hold (or tare), or None if there are none.
+    The motor can keep the scale from ever reporting stable, so unstable readings count too; the stable count says how settled it was."""
+    window = [(grams, stable) for time_s, grams, stable in scale_readings if time_s >= HOLD_SECONDS - SAMPLE_SECONDS]
+    if not window:
+        return None
+    grams = np.array([grams for grams, _ in window])
+    return round(float(np.mean(grams)), 2), round(float(np.std(grams)), 2), len(window), sum(stable for _, stable in window)
+
+
+def format_reading(reading):
+    grams, std, samples, stable_samples = reading
+    if samples == "":
+        return f"{grams:.1f} g"
+    return f"{grams:.1f} g ± {std:.1f} ({stable_samples}/{samples} stable)"
+
+
+def append_scale_readings(scale_path, direction, approach, torque, scale_readings):
+    with scale_path.open("a", newline="") as file:
+        writer = csv.writer(file)
+        for time_s, grams, stable in scale_readings:
+            writer.writerow([direction, approach, torque, f"{time_s:.3f}", grams, int(stable)])
 
 
 def append_row(data_path, row):
@@ -173,9 +307,12 @@ def append_row(data_path, row):
         csv.writer(file).writerow(row)
 
 
-def hold(odrive_device, torque, approach):
-    """Arm, hold `torque` for HOLD_SECONDS, disarm. Returns mean (Iq setpoint, Iq measured, vbus) over the last SAMPLE_SECONDS."""
+def hold(odrive_device, torque, approach, scale):
+    """Arm, hold `torque` for HOLD_SECONDS, disarm. Returns mean Iq setpoint, Iq measured and vbus over the last SAMPLE_SECONDS,
+    and the scale readings as (time, grams, stable), time from when `torque` was applied (negative during an overshoot)."""
     axis = odrive_device.axis0
+    if scale:
+        scale.clear()
     axis.controller.input_torque = 0
     axis.watchdog_feed()
     axis.requested_state = AxisState.CLOSED_LOOP_CONTROL
@@ -186,21 +323,27 @@ def hold(odrive_device, torque, approach):
     check_closed_loop(odrive_device)
     start_position, _ = read_motion(axis)
 
+    scale_readings = []
     if approach == "above":
         axis.controller.input_torque = torque + math.copysign(OVERSHOOT_NM, torque)
-        watch(odrive_device, start_position, OVERSHOOT_SECONDS)
+        scale_readings += watch(odrive_device, start_position, OVERSHOOT_SECONDS, scale)[1]
     axis.controller.input_torque = torque
-    watch(odrive_device, start_position, HOLD_SECONDS - SAMPLE_SECONDS)
-    samples = watch(odrive_device, start_position, SAMPLE_SECONDS, sample=True)
+    torque_applied = time.monotonic()
+    scale_readings += watch(odrive_device, start_position, HOLD_SECONDS - SAMPLE_SECONDS, scale)[1]
+    samples, sampled_readings = watch(odrive_device, start_position, SAMPLE_SECONDS, scale, sample=True)
+    scale_readings += sampled_readings
     check_closed_loop(odrive_device)
     stop(axis)
-    return np.mean(samples, axis=0)
+    scale_readings = [(time_s - torque_applied, grams, stable) for time_s, grams, stable in scale_readings]
+    return *np.mean(samples, axis=0), scale_readings
 
 
-def watch(odrive_device, start_position, seconds, sample=False):
-    """Feed the watchdog and stop on shaft motion for `seconds`. Returns the signal samples if `sample`."""
+def watch(odrive_device, start_position, seconds, scale, sample=False):
+    """Feed the watchdog and stop on shaft motion for `seconds`.
+    Returns the signal samples if `sample`, and the scale readings as (monotonic time, grams, stable)."""
     axis = odrive_device.axis0
     samples = []
+    scale_readings = []
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         axis.watchdog_feed()
@@ -210,8 +353,11 @@ def watch(odrive_device, start_position, seconds, sample=False):
             raise SystemExit("The shaft moved during the hold: the arm slipped or missed the scale. Motor idled.")
         if sample:
             samples.append(read_signals(odrive_device))
+        if scale:
+            now = time.monotonic()
+            scale_readings += [(now, grams, stable) for grams, stable in scale.poll()]
         time.sleep(LOOP_PERIOD)
-    return samples
+    return samples, scale_readings
 
 
 def read_motion(axis):
@@ -265,7 +411,8 @@ def format_temperatures(temperatures):
     return f"FET {temperatures['fet']:.0f} °C, motor {motor}"
 
 
-def ask_grams(prompt, allow_repeat=False):
+def ask_reading(prompt, allow_repeat=False):
+    """A typed scale reading, as (grams, "", "", "") to fill the spread and count columns; None for r."""
     while True:
         answer = input(prompt).strip().lower()
         if allow_repeat and answer == "r":
@@ -275,7 +422,7 @@ def ask_grams(prompt, allow_repeat=False):
         except ValueError:
             grams = math.nan
         if math.isfinite(grams):
-            return grams
+            return grams, "", "", ""
         print("  Enter a number in grams" + (", or r." if allow_repeat else "."))
 
 

@@ -12,14 +12,15 @@ You command torque in motor-side N·m: `input_torque` over odrivetool or CAN. `G
 So G ≈ 4, and the experiment tells you how far from 4.
 
 ## Configuration
-- **Bench fixtureL:** lever arm and scale
+- **Bench fixture:** lever arm and scale
 - **Drivetrain:** **Motor only** Arm clamped to the motor shaft.
 - **Firmware:** Teensy isn't needed. Driven by `bench static-gain record` over the ODrive's USB.
-- **Connections:** ODrive USB → Mac
+- **Connections:** ODrive USB → Mac; the balance's USB Device port (the square USB-B socket) → Mac
 - **Power:** Battery
 
 ## Equipment
-- Kitchen scale (grams); a rigid lever arm
+- Scale: the OHAUS Adventurer AX8201/E (0.1 g), read by the script over USB. Any gram scale works if you type the readings in.
+- A rigid lever arm.
 - Clamp point: the motor's free shaft end.
 - Ruler or calipers.
 
@@ -27,14 +28,16 @@ So G ≈ 4, and the experiment tells you how far from 4.
 1. Clamp the arm so it sticks out horizontally. It must not slip.
 2. Put the scale under the arm's tip so the arm rests on it when level. Use a narrow contact point (a bolt head or an edge) so the length is well defined.
 3. Measure `L`, from the shaft (or axle) center to the contact point, in meters.
-4. With the motor idle, read the scale: this is the **tare**, the arm's resting weight.
+4. With the motor idle, the scale reads the **tare**, the arm's resting weight. The script reads it; don't zero the balance with the arm on it, or its auto-zero tracking can creep the near-zero readings.
 
 ## Procedure
 Recorded with `bench static-gain record`. It talks to the ODrive over USB, so close `odrivetool` first.
 
 ```sh
-bench static-gain record --motor left --arm-length 0.200
+bench static-gain record --motor left --arm-length 0.200 --scale /dev/cu.usbserial-DN04KNBY
 ```
+
+The balance's port is the `/dev/cu.usbserial-*` that appears when you plug it in. Set it to grams. Without `--scale`, the script asks you to type each reading.
 
 Before anything moves, the script checks the ODrive and refuses to start if:
 - the node ID doesn't match `--motor` (left 1, right 2), so it can't drive the wrong ODrive;
@@ -47,17 +50,18 @@ While it runs:
 - If the shaft moves during a hold (the arm slipped or missed the scale), the motor idles and the run stops.
 - Holds are at least 5 s apart, and it waits for you to let things cool if the FET passes 80 °C or the motor passes 60 °C. The motor temperature reads n/a if its thermistor isn't enabled on the ODrive.
 
-1. Confirm the setup, confirm the scale is placed for the positive direction, and enter the tare (Setup step 4).
+1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 4).
 2. It steps through the levels: 0.05, 0.10, 0.15, 0.20, 0.25 N·m motor-side by default (`--levels` changes them; at least 3). That's ≈ 2–10 A; with a 0.2 m arm it's roughly 25–130 g on the scale, so a 1 g scale gives a few % at the low end and better above.
-3. At each level it arms the motor, holds the torque for 2.5 s, then idles. **Watch the scale during the hold** and type the reading at the end of it; `r` repeats the level.
-4. After the last level it asks for the tare again.
+3. At each level it arms the motor, holds the torque for 2.5 s, then idles. It polls the balance through the hold (~8 readings/s) and averages the last second. Unstable readings count too, since the motor may keep the balance from ever settling. It prints the mean ± standard deviation and how many readings were stable. Without `--scale`, watch the scale and type the reading at the end of the hold; `r` repeats the level.
+4. After the last level it reads the tare again.
 5. **Other direction:** move the scale to the other side of the axle (or flip the arm), confirm, and repeat from the tare.
 6. Optional: `--from-above` adds a second pass per direction that approaches each level from 0.05 N·m higher. The difference shows static friction (hysteresis). The top level then reaches 0.30 N·m, so it also needs `--max-torque 0.3`.
 
 Each run goes to `runs/<timestamp>_static-gain_<motor>/`:
-- `meta.json`: settings fixed at the start (arm length, levels, ODrive serial and firmware, node ID, configured `torque_constant`, velocity cap). Written once.
+- `meta.json`: settings fixed at the start (arm length, levels, ODrive serial and firmware, node ID, configured `torque_constant`, velocity cap, the balance's port, ID and firmware or `manual`). Written once.
 - `odrive_config.json`: the full ODrive config, as `odrivetool backup-config` would save it.
-- `data.csv`: every measurement, one row each, appended as it's taken. Columns `direction, approach, torque_command_Nm, scale_g, iq_setpoint_A, iq_measured_A, vbus_V, fet_temperature_C, motor_temperature_C`. `approach` is `tare` (motor idle, command 0, the Iq and vbus columns empty), `below` or `above`.
+- `data.csv`: every measurement, one row each, appended as it's taken. Columns `direction, approach, torque_command_Nm, scale_g, scale_std_g, scale_samples, scale_stable_samples, iq_setpoint_A, iq_measured_A, vbus_V, fet_temperature_C, motor_temperature_C`. `approach` is `tare` (motor idle, command 0, the Iq and vbus columns empty), `below` or `above`. `scale_g` is the mean over the last second; the spread and counts are empty for typed readings.
+- `scale.csv` (with `--scale`): every balance reading, `direction, approach, torque_command_Nm, time_s, scale_g, stable`. `time_s` counts from when the torque was applied (negative during a from-above overshoot). Use it to check the balance settles before the averaged last second.
 
 Without the script the same procedure works by hand in odrivetool: type the rows into `data.csv` and write `meta.json` with at least `arm_length_m` and `torque_constant_NmA`.
 

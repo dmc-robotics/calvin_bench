@@ -1,11 +1,11 @@
 # Calvin Bench: Plan
 
-_Last updated 2026-10-01._
+_Last updated 2026-10-13._
 
 ## Status
 
 - **Current milestone: M0** (ODrive bring-up over USB). Needs the user at the bench.
-- File structure is scaffolded (firmware stubs compile). The CLI has `bench static-gain record` / `analyze` for experiment 2 (tested against a simulated ODrive only); the rest is a stub. Nothing has run on hardware yet.
+- File structure is scaffolded (firmware stubs compile). The CLI has `bench static-gain record` / `analyze` for experiment 2 (tested against a simulated ODrive only; it reads the OHAUS balance over USB, tested on the real balance). On the first real run, check in `scale.csv` that the balance settles before the averaged last second of each hold. The rest is a stub. Nothing has run on hardware yet.
 - Next code work: M1 (InstinctusCore `ODriveCan` + bench sketch text commands), once M0 is done.
 
 ## Goal
@@ -93,9 +93,9 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 | Mass properties | From CAD, not the bench |
 | Explorator | Optional later: a GUI over the CLI (`bench serve`, same WebSocket envelope as the cogitator gateway) |
 | RL simulator | Undecided; leaning MuJoCo. Not needed until after LQR |
-| Equipment | Scale, bench PSU, battery, voltmeter, Mac, Teensy 4.1, 2× CAN Pal. Nothing else required; a logic analyzer or USB-CAN adapter only if debugging gets stubborn |
+| Equipment | Scale (OHAUS AX8201/E, 0.1 g, read over USB; interface in CLAUDE.md), bench PSU, battery, voltmeter, Mac, Teensy 4.1, 2× CAN Pal. Nothing else required; a logic analyzer or USB-CAN adapter only if debugging gets stubborn |
 | calvin_theory | Personal learning notes; not a dependency |
-| Run folders | `runs/<YYYY-MM-DD_HHMMSS>_<experiment>_<motor>/`. `meta.json` = conditions fixed at the start, written once; `data.csv` = every measurement (raw ODrive units), appended; `odrive_config.json` = config dump; `results.json` + `plot.png` from analysis. Experiment 2 uses `bench static-gain record` / `analyze` over the ODrive's USB; its CSV columns are in `instructions/02-static-torque-gain.md` |
+| Run folders | `runs/<YYYY-MM-DD_HHMMSS>_<experiment>_<motor>/`. `meta.json` = conditions fixed at the start, written once; `data.csv` = every measurement (raw ODrive units), appended; `odrive_config.json` = config dump; `results.json` + `plot.png` from analysis. Experiment 2 uses `bench static-gain record` / `analyze` over the ODrive's USB, plus `scale.csv` (every balance reading); its CSV columns are in `instructions/02-static-torque-gain.md` |
 | Torque units through analysis | `units.py` does exact conversions only (rev→rad, motor→wheel angle and speed by `BELT_RATIO`). Torques stay in commanded motor-side N·m through every analysis; the measured G from experiment 2 is applied once, in `bench export` |
 
 ## Decision log (why)

@@ -48,6 +48,7 @@ def main():
     )
     record_parser.add_argument("--from-above", action="store_true", help="add a pass approaching each level from above (stiction)")
     record_parser.add_argument("--max-torque", type=positive_number, default=0.25, help="refuse levels above this, N·m (default: %(default)s)")
+    record_parser.add_argument("--scale", metavar="PORT", help="read the OHAUS balance on this port, e.g. /dev/cu.usbserial-DN04KNBY (default: type the readings)")
 
     analyze_parser = static_gain_actions.add_parser("analyze", help="fit k and G, write results.json and plot.png")
     analyze_parser.add_argument("run_directory")
@@ -60,7 +61,9 @@ def main():
 
         if arguments.action == "record":
             try:
-                static_gain.record(arguments.motor, arguments.arm_length, arguments.levels, arguments.from_above, arguments.max_torque)
+                static_gain.record(
+                    arguments.motor, arguments.arm_length, arguments.levels, arguments.from_above, arguments.max_torque, arguments.scale
+                )
             except KeyboardInterrupt:
                 parser.exit(1, "\nInterrupted. Motor idled.\n")
         else:
