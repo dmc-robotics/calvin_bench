@@ -81,7 +81,8 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 
 | Topic | Decision |
 |---|---|
-| Battery | 4S LiPo |
+| Battery | 4S LiPo, 7.2 Ah. No charge rating on the label, so assume 1C |
+| Regen | 2 Ω 50 W brake resistor per S1. Battery takes regen up to `max_regen_current` = 5 A, the resistor takes the rest; `dc_max_negative_current` = −7 A is a backstop trip |
 | CAN | Teensy 4.1 + 2× Adafruit CAN Pal. Left: CAN1 (pins 22/23), node 1. Right: CAN3 (pins 30/31), node 2. 1 Mbit/s, one bus per ODrive (~50% load at 1 kHz). Jetson stays on Serial1, so CAN2 is unused |
 | Control layering | Teensy runs balance only (LQR, later a small fixed-cost RL policy) at 1 kHz. Jetson sends higher-level commands at 20–50 Hz |
 | Design principle | Keep the Teensy lean, fast, reliable, deterministic. Logic on the host |

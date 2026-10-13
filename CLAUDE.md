@@ -27,7 +27,7 @@ calvin_bench/
 
 ## Python
 
-- pyenv 3.12: `python -m venv .venv && source .venv/bin/activate && pip install -e .`, then `bench --help`.
+- Python 3.15 (`.python-version`), managed with uv: `uv sync`, then `uv run bench --help`.
 
 ## Bench safety (on top of the root rules)
 - Keep torque limits small until the user raises them.
