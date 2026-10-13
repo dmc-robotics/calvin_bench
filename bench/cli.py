@@ -3,7 +3,8 @@ import argparse
 import math
 
 DEFAULT_STATIC_GAIN_LEVELS = [0.05, 0.10, 0.15, 0.20, 0.25]
-# Named after the serial number of the FTDI chip inside the balance, so it stays the same across replugs and USB sockets.
+# The OHAUS balance's port, the default for --scale. Safe to hard-code: macOS names it after the serial number
+# of the FTDI chip inside the balance, so it stays the same across replugs, reboots and USB sockets.
 DEFAULT_SCALE_PORT = "/dev/cu.usbserial-DN04KNBY"
 
 
