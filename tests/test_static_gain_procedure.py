@@ -6,7 +6,7 @@ import pytest
 from bench.errors import BenchError
 from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
-from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Settings
+from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Measurement, ScaleSample, Settings
 from bench.runs import Run
 from fakes import FakeOhausAdventurer
 
@@ -53,10 +53,11 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["velocity_cap_rev_per_s"] == pytest.approx(1.5 * max(DEFAULT_LEVELS_NM) / device.axis0.controller.config.vel_gain)
     assert meta["scale"]["balance_id"] == "FAKE"
     assert run.read_json("odrive_config") == {"fake": True}
-    assert len(run.rows("data")) == 2 * (2 + len(DEFAULT_LEVELS_NM))
-    holds = [row["hold"] for row in run.rows("data")]
-    assert holds == [str(hold) for hold in range(len(holds))]
-    assert {row["hold"] for row in run.rows("scale")} == set(holds)  # every tare and hold has its scale samples
+    rows = run.rows("data", Measurement)
+    assert len(rows) == 2 * (2 + len(DEFAULT_LEVELS_NM))
+    holds = [row.hold for row in rows]
+    assert holds == list(range(len(holds)))
+    assert {sample.hold for sample in run.rows("scale", ScaleSample)} == set(holds)  # every tare and hold has its scale samples
 
     static_gain.analyze(run, show=False)
     results = run.read_json("results")
@@ -76,7 +77,7 @@ def test_from_above_overshoots_first(device, scale, runs_directory, monkeypatch)
 
     assert max(device.axis0.torque_log) == pytest.approx(0.15 + 0.05)
     assert min(device.axis0.torque_log) == pytest.approx(-(0.15 + 0.05))
-    approaches = [row["approach"] for row in only_run(runs_directory).rows("data")]
+    approaches = [row.approach for row in only_run(runs_directory).rows("data", Measurement)]
     assert approaches.count("above") == 2 * 3
 
 
@@ -87,9 +88,9 @@ def test_without_a_scale_the_readings_are_typed(device, runs_directory, monkeypa
     procedure.record(Settings("left", ARM_LENGTH_M, levels_Nm=levels, **QUICK))
 
     run = only_run(runs_directory)
-    rows = run.rows("data")
-    assert [float(row["scale_g"]) for row in rows] == readings
-    assert all(row["scale_samples"] == "" for row in rows)
+    rows = run.rows("data", Measurement)
+    assert [row.scale_g for row in rows] == readings
+    assert all(row.scale_samples is None for row in rows)
     assert not run.path("scale.csv").exists()
     assert run.meta["scale"] == "manual"
 
@@ -100,7 +101,7 @@ def test_r_repeats_a_level(device, runs_directory, monkeypatch):
     procedure.record(Settings("left", ARM_LENGTH_M, levels_Nm=levels, **QUICK))
 
     assert device.axis0.arm_count == 2 * len(levels) + 1
-    holds = [int(row["hold"]) for row in only_run(runs_directory).rows("data")]
+    holds = [row.hold for row in only_run(runs_directory).rows("data", Measurement)]
     assert holds == [0, *range(2, 2 * (2 + len(levels)) + 1)]  # hold 1 was repeated, so it has no row
 
 

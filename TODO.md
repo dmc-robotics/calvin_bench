@@ -9,7 +9,7 @@ _Review of 2026-10-13. Item IDs (H1, M3, …) are for reference in questions. Do
 - [x] **Hold index column** (M3): add a `hold` column to `data.csv` and `scale.csv`, so a repeated hold's scale samples can be told apart and linked to their measurement row. This changes the CSV format.
 - [ ] **Delete Python stubs** (Low): remove `bench/waveforms.py`, `bench/hardware/link.py` and the unused `scipy` dependency until M3. PLAN already describes them.
 - [x] **Split `hold()`** (H2): the driver keeps the safety (`armed()` context + `apply(torque_Nm, seconds, during)`); the profile, overshoot, sampling window and averaging move to static-gain's procedure. Done in step 2.
-- [ ] **Typed run reader** (M1): approve `Run.rows(table, RowType)` returning dataclasses. For the 1 kHz data at M3, choosing between numpy structured arrays and pandas is a separate decision.
+- [x] **Typed run reader** (M1): approve `Run.rows(table, RowType)` returning dataclasses. For the 1 kHz data at M3, choosing between numpy structured arrays and pandas is a separate decision.
 
 ## Steps
 
@@ -49,11 +49,11 @@ Why: validation is split across argparse types, `Settings.__post_init__` and the
 
 ### 5. M1 + M2: typed data from run folders to report
 Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "pure" analysis parses CSV strings, and `report.py` looks up results by string key.
-- [ ] Add `Run.rows(table, RowType)` returning row dataclasses: empty cells become `None` and `"True"`/`"False"` become booleans (`runs.py:57–59`).
-- [ ] Use attributes in the analysis and drop `column()`'s string parsing (`analysis.py:59–65,110–111`).
-- [ ] Add `DirectionResult` and `Results` dataclasses, with `None` for absent values and `asdict()` for `results.json`. `DirectionFit` then holds the arrays plus `result` (`analysis.py:14–22,43–54,82–96`).
-- [ ] Make `report.py` read attributes instead of `summary['k']` and the `"key" in results` checks (`report.py:13–30`).
-- [ ] Tests: the typed round trip, including `None` and `bool` cells. Analysis tests can pass `Measurement`s directly.
+- [x] Add `Run.rows(table, RowType)` returning row dataclasses: empty cells become `None` and `"True"`/`"False"` become booleans (`runs.py:57–59`).
+- [x] Use attributes in the analysis and drop `column()`'s string parsing (`analysis.py:59–65,110–111`).
+- [x] Add `DirectionResult` and `Results` dataclasses, with `None` for absent values and `asdict()` for `results.json`. `DirectionFit` then holds the arrays plus `result` (`analysis.py:14–22,43–54,82–96`).
+- [x] Make `report.py` read attributes instead of `summary['k']` and the `"key" in results` checks (`report.py:13–30`).
+- [x] Tests: the typed round trip, including `None` and `bool` cells. Analysis tests can pass `Measurement`s directly.
 
 ### 6. M5: one lifecycle shape for every instrument
 - [ ] Add `OhausAdventurer.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `OhausAdventurer.__init__` does I/O (`ohaus_adventurer.py:37–62`, `procedure.py:34–38`).

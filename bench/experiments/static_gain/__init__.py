@@ -6,8 +6,10 @@ A lever arm on the motor shaft pushes on the OHAUS balance while the ODrive hold
   analysis.py   fitting (pure: rows in, results out)
   report.py     the printed report and plot
 """
+from dataclasses import asdict
+
 from bench.experiments.static_gain import analysis, procedure, report
-from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Settings
+from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Measurement, Settings
 from bench.hardware.ohaus_adventurer import DEFAULT_PORT
 from bench.motors import NODE_IDS
 
@@ -41,8 +43,8 @@ def record(arguments):
 def analyze(run, show=True):
     meta = run.meta
     arm_length_m = meta["settings"]["arm_length_m"]
-    results, fits = analysis.fit(run.rows("data"), arm_length_m, meta["odrive"]["torque_constant_NmA"])
-    run.write_json("results", results)
+    results, fits = analysis.fit(run.rows("data", Measurement), arm_length_m, meta["odrive"]["torque_constant_NmA"])
+    run.write_json("results", asdict(results))
     report.print_report(run.name, arm_length_m, results)
     report.plot(run, fits, results, show)
 

@@ -45,61 +45,62 @@ def tare(hold, direction, grams):
 
 
 def fit(tmp_path, measurements):
-    """Through a real data.csv, so the rows come back as strings with empty cells, as `bench analyze` sees them."""
+    """Through a real data.csv, as `bench analyze` reads it."""
     run = Run(tmp_path)
     run.append("data", *measurements)
-    return analysis.fit(run.rows("data"), ARM_LENGTH_M, TORQUE_CONSTANT_NMA)[0]
+    return analysis.fit(run.rows("data", Measurement), ARM_LENGTH_M, TORQUE_CONSTANT_NMA)[0]
 
 
 def test_recovers_k_offset_and_g(tmp_path):
     results = fit(tmp_path, make_measurements())
     for direction in DIRECTIONS:
-        summary = results["directions"][direction]
-        assert summary["k"] == pytest.approx(K[direction])
-        assert summary["offset_Nm"] == pytest.approx(OFFSET_NM[direction], abs=1e-9)
-        assert summary["max_residual_Nm"] == pytest.approx(0, abs=1e-9)
-        assert summary["tare_drift_g"] == 0
-        assert "static_friction_Nm" not in summary
+        result = results.directions[direction]
+        assert result.k == pytest.approx(K[direction])
+        assert result.offset_Nm == pytest.approx(OFFSET_NM[direction], abs=1e-9)
+        assert result.max_residual_Nm == pytest.approx(0, abs=1e-9)
+        assert result.tare_drift_g == 0
+        assert result.static_friction_Nm is None
     k = (K["positive"] + K["negative"]) / 2
-    assert results["k"] == pytest.approx(k)
-    assert results["G"] == pytest.approx(units.BELT_RATIO * k)
-    assert results["asymmetry_percent"] == pytest.approx(100 * abs(K["positive"] - K["negative"]) / k)
-    assert results["warnings"] == []
+    assert results.k == pytest.approx(k)
+    assert results.G == pytest.approx(units.BELT_RATIO * k)
+    assert results.asymmetry_percent == pytest.approx(100 * abs(K["positive"] - K["negative"]) / k)
+    assert results.warnings == []
 
 
 def test_measured_torque_constant_is_k_times_the_configured_one(tmp_path):
     # Iq tracks the command, and the motor makes k times the commanded torque.
     results = fit(tmp_path, make_measurements())
     for direction in DIRECTIONS:
-        assert results["directions"][direction]["torque_constant_NmA"] == pytest.approx(K[direction] * TORQUE_CONSTANT_NMA)
+        assert results.directions[direction].torque_constant_NmA == pytest.approx(K[direction] * TORQUE_CONSTANT_NMA)
 
 
 def test_stiction_from_above(tmp_path):
     results = fit(tmp_path, make_measurements(from_above=True))
     for direction in DIRECTIONS:
-        summary = results["directions"][direction]
-        assert summary["static_friction_Nm"] == pytest.approx(STICTION_NM)
-        assert summary["k"] == pytest.approx(K[direction])  # the from-above pass stays out of the fit
+        result = results.directions[direction]
+        assert result.static_friction_Nm == pytest.approx(STICTION_NM)
+        assert result.static_friction_per_level_Nm == pytest.approx([STICTION_NM] * len(DEFAULT_LEVELS_NM))
+        assert result.k == pytest.approx(K[direction])  # the from-above pass stays out of the fit
 
 
 def test_warns_on_clipped_torque(tmp_path):
-    warnings = fit(tmp_path, make_measurements(setpoint_error=-0.05))["warnings"]
+    warnings = fit(tmp_path, make_measurements(setpoint_error=-0.05)).warnings
     assert len(warnings) == 2
     assert all("clipped" in warning for warning in warnings)
 
 
 def test_warns_on_tare_drift(tmp_path):
     results = fit(tmp_path, make_measurements(tare_drift_g=3.0))
-    assert results["directions"]["positive"]["tare_drift_g"] == pytest.approx(3.0)
-    assert sum("tare drifted" in warning for warning in results["warnings"]) == 2
+    assert results.directions["positive"].tare_drift_g == pytest.approx(3.0)
+    assert sum("tare drifted" in warning for warning in results.warnings) == 2
 
 
 def test_skips_an_incomplete_direction(tmp_path):
     results = fit(tmp_path, make_measurements()[:-1])  # the negative direction's closing tare is missing
-    assert list(results["directions"]) == ["positive"]
-    assert "asymmetry_percent" not in results
-    assert len(results["warnings"]) == 1
-    assert "negative skipped" in results["warnings"][0]
+    assert list(results.directions) == ["positive"]
+    assert results.asymmetry_percent is None
+    assert len(results.warnings) == 1
+    assert "negative skipped" in results.warnings[0]
 
 
 def test_a_run_with_no_complete_direction_raises(tmp_path):
