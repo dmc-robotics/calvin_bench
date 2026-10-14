@@ -8,7 +8,7 @@ A lever arm on the motor shaft pushes on the OHAUS balance while the ODrive hold
 """
 from bench.experiments.static_gain import analysis, procedure, report
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Settings
-from bench.hardware.scale import DEFAULT_PORT
+from bench.hardware.ohaus_adventurer import DEFAULT_PORT
 from bench.motors import NODE_IDS
 
 DESCRIPTION = "experiment 2: static torque gain (lever arm + scale), over the ODrive's USB"

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from odrive.enums import AxisState, ControlMode, InputMode
 
 from bench import units
-from bench.hardware.scale import Weight
+from bench.hardware.ohaus_adventurer import Weight
 
 TORQUE_CONSTANT_NMA = 8.27 / 330
 
@@ -30,7 +30,7 @@ class FakeController:
 
 
 class FakeFoc:
-    """Iq tracks the torque command exactly; the motor then makes `k` times the commanded torque (FakeScale weighs that)."""
+    """Iq tracks the torque command exactly; the motor then makes `k` times the commanded torque (FakeOhausAdventurer weighs that)."""
 
     def __init__(self, axis):
         self._axis = axis
@@ -106,7 +106,7 @@ class FakeDevice:
         self.vbus_voltage = 15.8
 
 
-class FakeScale:
+class FakeOhausAdventurer:
     """Reads the tare plus whatever the fake motor pushes onto it through an arm of `arm_length_m`."""
 
     port = "/dev/cu.fake"

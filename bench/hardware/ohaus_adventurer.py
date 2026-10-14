@@ -33,7 +33,7 @@ class Weight(NamedTuple):
     stable: bool
 
 
-class Scale:
+class OhausAdventurer:
     """`poll` never blocks, so a control loop (e.g. one feeding the ODrive watchdog) can read the balance as it runs."""
 
     def __init__(self, port=DEFAULT_PORT):

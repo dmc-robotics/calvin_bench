@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from bench import console
 from bench.experiments.static_gain.data import DIRECTIONS, NAME, Measurement, ScaleSample
 from bench.hardware.odrive_usb import ODriveUsb, Signals
-from bench.hardware.scale import Scale
+from bench.hardware.ohaus_adventurer import OhausAdventurer
 from bench.runs import Run
 
 
@@ -31,7 +31,7 @@ class Reading:
 
 
 def record(settings):
-    scale = Scale(settings.scale_port) if settings.scale_port else None
+    scale = OhausAdventurer(settings.scale_port) if settings.scale_port else None
     if scale:
         print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
     print("Connecting to the ODrive over USB...")

@@ -56,7 +56,7 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [ ] Tests: the typed round trip, including `None` and `bool` cells. Analysis tests can pass `Measurement`s directly.
 
 ### 6. M5: one lifecycle shape for every instrument
-- [ ] Add `Scale.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `Scale.__init__` does I/O (`scale.py:37–62`, `procedure.py:34–38`).
+- [ ] Add `OhausAdventurer.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `OhausAdventurer.__init__` does I/O (`ohaus_adventurer.py:37–62`, `procedure.py:34–38`).
 
 ### 7. M6 + Low: docs and tidy-ups
 - [ ] `README.md:5` says Instinctus is "This Repo". Fix it to describe calvin_bench.
@@ -67,6 +67,10 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [ ] Import `TORQUE_CONSTANT_NMA` from `tests/fakes.py` instead of repeating it in `test_static_gain_analysis.py:10`.
 - [x] Rename the procedure's `odrive` variable to `drive` (done in step 2), so it doesn't share a name with the `odrive` library used in `odrive_usb.py`.
 - [ ] _(If decided)_ Delete the Python stubs and `scipy`.
+
+## After the steps
+
+- [ ] Flesh out `OhausAdventurer` (`bench/hardware/ohaus_adventurer.py`). Renamed from `Scale` (`scale.py`) on 2026-10-14: hardware classes and modules are named for the hardware; "scale" stays the generic word and variable name. The untracked `docs/` folder belongs to this work.
 
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)
 

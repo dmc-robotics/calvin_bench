@@ -8,7 +8,7 @@ from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Settings
 from bench.runs import Run
-from fakes import FakeScale
+from fakes import FakeOhausAdventurer
 
 ARM_LENGTH_M = 0.2
 QUICK = {"hold_s": 0.06, "sample_s": 0.04, "rest_s": 0.0, "overshoot_s": 0.02, "minimum_scale_readings": 1}
@@ -31,8 +31,8 @@ class Bench:
 
 @pytest.fixture
 def scale(device, monkeypatch):
-    fake = FakeScale(device.axis0, ARM_LENGTH_M)
-    monkeypatch.setattr(procedure, "Scale", lambda port: fake)
+    fake = FakeOhausAdventurer(device.axis0, ARM_LENGTH_M)
+    monkeypatch.setattr(procedure, "OhausAdventurer", lambda port: fake)
     return fake
 
 
