@@ -16,6 +16,7 @@ def test_connect_caps_the_velocity_and_restores_it(device):
     with ODriveUsb.connect("left", 0.25) as drive:
         assert drive.velocity_cap_rev_per_s == pytest.approx(1.5 * 0.25 / config.vel_gain)
         assert config.vel_limit == drive.velocity_cap_rev_per_s
+        assert drive.configuration["axis0.controller.config.vel_limit"] == 10.0  # as found, not the cap
     assert config.vel_limit == 10.0
     assert device.axis0.is_idle
 
@@ -51,10 +52,11 @@ def test_apply_holds_the_torque_and_returns_the_signals_each_tick(device):
             assert device.axis0.controller.input_torque == 0.1  # still on after apply returns
         assert device.axis0.is_idle  # by armed itself, not by connect's cleanup
     assert len(ticks) >= 4
-    assert [when for when, _ in ticks] == sorted(when for when, _ in ticks)
-    for _, signals in ticks:
-        assert signals.iq_setpoint_A == pytest.approx(0.1 / TORQUE_CONSTANT_NMA)
-        assert signals.vbus_V == pytest.approx(device.vbus_voltage)
+    assert [tick.time_s for tick in ticks] == sorted(tick.time_s for tick in ticks)
+    for tick in ticks:
+        assert tick.iq_setpoint_A == pytest.approx(0.1 / TORQUE_CONSTANT_NMA)
+        assert tick.vbus_V == pytest.approx(device.vbus_voltage)
+        assert tick.feed_gap_s < 0.05
     assert device.axis0.watchdog_feeds >= 5
 
 
@@ -133,13 +135,22 @@ def test_ctrl_c_mid_hold_ends_idle_with_the_velocity_limit_restored(device):
     assert device.axis0.controller.config.vel_limit == 10.0
 
 
-def test_a_slow_callback_aborts_before_the_watchdog_trips(device):
+def test_a_callback_slower_than_a_tick_doesnt_add_the_ticks_sleep(device):
     def slow_scale():
-        time.sleep(0.035)  # with the loop's 0.02 s sleep, past half the 0.1 s timeout
+        time.sleep(0.035)  # with a fixed 0.02 s sleep on top, past half the 0.1 s timeout
+
+    with ODriveUsb.connect("left", 0.25) as drive, drive.armed():
+        ticks = drive.apply(0.1, 0.2, during=slow_scale)
+    assert max(tick.feed_gap_s for tick in ticks) < 0.05
+
+
+def test_a_blocking_callback_aborts_before_the_watchdog_trips(device):
+    def blocking_scale():
+        time.sleep(0.06)
 
     with ODriveUsb.connect("left", 0.25) as drive:
         with pytest.raises(BenchError, match="between watchdog feeds"), drive.armed():
-            drive.apply(0.1, 0.5, during=slow_scale)
+            drive.apply(0.1, 0.5, during=blocking_scale)
         assert device.axis0.is_idle
     assert not device.axis0.watchdog_tripped
 
@@ -163,3 +174,12 @@ def test_arming_refuses_to_continue_if_the_axis_isnt_in_closed_loop(device):
             drive.apply(0.1, 0.1)
     assert all(torque == 0 for torque in device.axis0.torque_log)
     assert device.axis0.is_idle
+
+
+def test_no_odrive_on_usb_raises_bench_error(device, monkeypatch):
+    def time_out(timeout):
+        raise TimeoutError
+
+    monkeypatch.setattr(odrive_usb.odrive, "find_sync", time_out)
+    with pytest.raises(BenchError, match="No ODrive on USB"), ODriveUsb.connect("left", 0.25):
+        pass

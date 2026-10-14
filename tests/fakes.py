@@ -132,6 +132,7 @@ class FakeBalance:
         self.lag = lag
         self.stable = True
         self.standby_after_weights = None  # goes into standby after this many weight replies
+        self.silent_after_weights = None  # stops answering after this many
         self.silent = False
         self.unplugged = False
         self.standby = False
@@ -201,6 +202,8 @@ class FakeBalance:
             self._weights_sent += 1
             if self._weights_sent == self.standby_after_weights:
                 self.standby = True
+            if self._weights_sent == self.silent_after_weights:
+                self.silent = True
             return self._reply(self.weight_line() + "\r\n" * 4)
         queries = {
             "PV": "Sr 1.06",

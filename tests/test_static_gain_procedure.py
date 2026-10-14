@@ -6,7 +6,7 @@ import pytest
 from bench.errors import BenchError
 from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
-from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Measurement, ScaleSample, Settings
+from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Measurement, ODriveSample, ScaleSample, Settings
 from bench.runs import Run
 from bench.hardware import ohaus_adventurer
 from bench.hardware.ohaus_adventurer import OhausError
@@ -58,12 +58,18 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["odrive"]["node_id"] == 1
     assert meta["velocity_cap_rev_per_s"] == pytest.approx(1.5 * max(DEFAULT_LEVELS_NM) / device.axis0.controller.config.vel_gain)
     assert meta["scale"]["balance_id"] == "B000000001"
-    assert run.read_json("odrive_config") == {"fake": True}
+    assert run.read_json("odrive_config") == {"axis0.controller.config.vel_limit": 10.0}  # as found, not the cap
+    assert len(meta["code"]["commit"]) == 40
+    assert meta["started_at"].startswith(run.name[:10])
     rows = run.rows("data", Measurement)
     assert len(rows) == 2 * (2 + len(DEFAULT_LEVELS_NM))
     holds = [row.hold for row in rows]
     assert holds == list(range(len(holds)))
     assert {sample.hold for sample in run.rows("scale", ScaleSample)} == set(holds)  # every tare and hold has its scale samples
+    odrive_samples = run.rows("odrive", ODriveSample)
+    torque_holds = {row.hold for row in rows if row.approach != "tare"}
+    assert {sample.hold for sample in odrive_samples} == torque_holds
+    assert all(sample.feed_gap_s < 0.05 for sample in odrive_samples)
 
     assert run.finished
 
@@ -85,8 +91,11 @@ def test_from_above_overshoots_first(device, scale, runs_directory, monkeypatch)
 
     assert max(device.axis0.torque_log) == pytest.approx(0.15 + 0.05)
     assert min(device.axis0.torque_log) == pytest.approx(-(0.15 + 0.05))
-    approaches = [row.approach for row in only_run(runs_directory).rows("data", Measurement)]
+    run = only_run(runs_directory)
+    approaches = [row.approach for row in run.rows("data", Measurement)]
     assert approaches.count("above") == 2 * 3
+    overshoot = [sample for sample in run.rows("odrive", ODriveSample) if sample.approach == "above" and sample.time_s < 0]
+    assert overshoot  # the overshoot's ticks are kept too
 
 
 def test_without_a_scale_the_readings_are_typed(device, runs_directory, monkeypatch):
@@ -101,6 +110,10 @@ def test_without_a_scale_the_readings_are_typed(device, runs_directory, monkeypa
     assert all(row.scale_samples is None for row in rows)
     assert not run.path("scale.csv").exists()
     assert run.meta["scale"] is None
+
+    run.path("finished.json").unlink()
+    static_gain.analyze(run, show=False)
+    assert run.read_json("results")["warnings"][0] == "the recording didn't finish (no finished.json)."
 
 
 def test_r_repeats_a_level(device, runs_directory, monkeypatch):
@@ -156,3 +169,22 @@ def test_the_wrong_odrive_moves_nothing(device, scale, runs_directory, monkeypat
     with pytest.raises(BenchError, match="Wrong ODrive"):
         procedure.record(Settings("right", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
     assert device.axis0.arm_count == 0
+
+
+def test_too_few_balance_readings_are_used_and_flagged_not_asked_for(device, scale, runs_directory, monkeypatch):
+    bench = Bench()
+    monkeypatch.setattr(builtins, "input", bench)
+    procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **{**QUICK, "minimum_scale_readings": 50}))
+    assert all("[y/N]" in prompt for prompt in bench.prompts)  # nothing typed in
+
+    run = only_run(runs_directory)
+    static_gain.analyze(run, show=False)
+    assert any("low confidence" in warning for warning in run.read_json("results")["warnings"])
+
+
+def test_a_silent_balance_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
+    monkeypatch.setattr(builtins, "input", Bench())
+    scale.silent_after_weights = 3  # the one connect reads, then a couple during the tare
+    with pytest.raises(BenchError, match="no balance readings"):
+        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
+    assert device.axis0.is_idle

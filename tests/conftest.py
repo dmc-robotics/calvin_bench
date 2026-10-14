@@ -13,7 +13,7 @@ def device(monkeypatch):
     """A fake ODrive that ODriveUsb.connect() finds, with arming shortened so holds are quick."""
     fake = FakeDevice()
     monkeypatch.setattr(odrive_usb.odrive, "find_sync", lambda timeout: fake)
-    monkeypatch.setattr(odrive_usb, "backup_config", lambda device: {"fake": True})
+    monkeypatch.setattr(odrive_usb, "backup_config", lambda device: {"axis0.controller.config.vel_limit": device.axis0.controller.config.vel_limit})
     monkeypatch.setattr(odrive_usb, "dump_errors", lambda device: None)
     monkeypatch.setattr(odrive_usb, "ARMING_S", 0.02)
     return fake

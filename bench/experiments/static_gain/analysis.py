@@ -47,10 +47,13 @@ class DirectionFit:
     warnings: list[str]
 
 
-def fit(rows, arm_length_m, torque_constant_NmA):
-    """The Analysis section of instructions/02 on data.csv's Measurements. Returns (Results, DirectionFit per direction)."""
+def fit(rows, arm_length_m, torque_constant_NmA, minimum_scale_readings=None):
+    """The Analysis section of instructions/02 on data.csv's Measurements. Returns (Results, DirectionFit per direction).
+    Readings averaged from fewer than `minimum_scale_readings` balance readings are flagged as low confidence."""
     fits = {}
     warnings = []
+    if minimum_scale_readings and (holds := [row.hold for row in rows if row.scale_samples is not None and row.scale_samples < minimum_scale_readings]):
+        warnings.append(f"low confidence: holds {', '.join(map(str, holds))} had fewer than {minimum_scale_readings} balance readings.")
     for direction, sign in DIRECTIONS.items():
         selected = [row for row in rows if row.direction == direction]
         if not selected:

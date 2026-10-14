@@ -38,6 +38,17 @@ class Signals(NamedTuple):
     vbus_V: float
 
 
+class Tick(NamedTuple):
+    """What apply() read on one pass of its loop."""
+    time_s: float  # time.monotonic()
+    feed_gap_s: float  # since the watchdog's previous feed
+    position_rev: float
+    velocity_rev_per_s: float
+    iq_setpoint_A: float
+    iq_measured_A: float
+    vbus_V: float
+
+
 @dataclass(frozen=True)
 class Temperatures:
     fet_C: float
@@ -61,19 +72,24 @@ class ODriveUsb:
         self._start_position = None  # set while armed
         self._last_feed = None
         self.velocity_cap_rev_per_s = None
+        self.configuration = None  # as found, before the velocity cap
 
     @classmethod
     @contextmanager
     def connect(cls, motor, highest_torque_Nm, timeout_s=10):
         """The ODrive for `motor` on USB, checked for torques up to `highest_torque_Nm`, with vel_limit capped.
         Idle on entry and on every exit, then vel_limit restored."""
-        drive = cls(odrive.find_sync(timeout=timeout_s))
+        try:
+            drive = cls(odrive.find_sync(timeout=timeout_s))
+        except TimeoutError:
+            raise BenchError(f"No ODrive on USB within {timeout_s} s. Is it powered, and is odrivetool closed?")
         controller_config = drive._axis.controller.config
         original_velocity_limit = None
         try:
             drive.stop()
             drive._require_ready(motor, highest_torque_Nm)
             drive._read_every_property_used()
+            drive.configuration = backup_config(drive._device)
             drive._highest_torque_Nm = highest_torque_Nm
             drive._feed_gap_limit_s = FEED_GAP_FRACTION * drive._axis.config.watchdog_timeout
             drive.velocity_cap_rev_per_s = drive._velocity_cap_for(highest_torque_Nm)
@@ -114,9 +130,9 @@ class ODriveUsb:
     def apply(self, torque_Nm, seconds, during=None):
         """Hold `torque_Nm` for `seconds` with the shaft stalled against the fixture. Only inside `armed()`.
 
-        Every LOOP_PERIOD_S it feeds the watchdog, aborts if the shaft moved, records the signals and calls `during()`,
-        which must return quickly: a gap between feeds over half the watchdog timeout aborts. Returns
-        (time.monotonic(), Signals) for each tick. The torque stays on.
+        Every LOOP_PERIOD_S it feeds the watchdog, aborts if the shaft moved, records a Tick and calls `during()`,
+        which must return quickly: a gap between feeds over half the watchdog timeout aborts. Returns the Ticks.
+        The torque stays on.
         """
         if self._start_position is None:
             raise RuntimeError("apply() is only allowed inside armed().")
@@ -127,16 +143,21 @@ class ODriveUsb:
         axis = self._axis
         axis.controller.input_torque = torque_Nm
         ticks = []
-        end = time.monotonic() + seconds
+        next_tick = time.monotonic()
+        end = next_tick + seconds
         while time.monotonic() < end:
-            self._feed()
+            feed_gap_s = self._feed()
             position, velocity = self.motion()
             if abs(position - self._start_position) > MOTION_LIMIT_REV or abs(velocity) > SPEED_LIMIT_REV_PER_S:
                 raise BenchError("The shaft moved during the hold: the fixture slipped. Motor idled.")
-            ticks.append((time.monotonic(), self.signals()))
+            ticks.append(Tick(time.monotonic(), feed_gap_s, position, velocity, *self.signals()))
             if during:
                 during()
-            time.sleep(LOOP_PERIOD_S)
+            next_tick += LOOP_PERIOD_S  # sleep to the next tick, so the reads don't add to the gap between feeds
+            if (delay_s := next_tick - time.monotonic()) > 0:
+                time.sleep(delay_s)
+            else:
+                next_tick = time.monotonic()
         self._require_closed_loop()
         return ticks
 
@@ -148,10 +169,6 @@ class ODriveUsb:
             "node_id": self._axis.config.can.node_id,
             "torque_constant_NmA": self._axis.config.motor.torque_constant,
         }
-
-    def config(self):
-        """The full config, as `odrivetool backup-config` saves it."""
-        return backup_config(self._device)
 
     def motion(self):
         return self._axis.pos_estimate, self._axis.vel_estimate
@@ -219,15 +236,18 @@ class ODriveUsb:
         self.temperatures()
 
     def _feed(self):
-        """Feed the watchdog, first aborting if the last feed was too long ago (something in the loop blocked)."""
+        """Feed the watchdog, first aborting if the last feed was too long ago (something in the loop blocked).
+        Returns the time since the last feed (0 for the first)."""
         now = time.monotonic()
-        if self._last_feed is not None and (gap_s := now - self._last_feed) > self._feed_gap_limit_s:
+        gap_s = 0.0 if self._last_feed is None else now - self._last_feed
+        if gap_s > self._feed_gap_limit_s:
             raise BenchError(
                 f"{gap_s:.3f} s between watchdog feeds (limit {self._feed_gap_limit_s:.3f} s, half the watchdog timeout): "
                 "something in the hold loop blocked. Motor idled."
             )
         self._axis.watchdog_feed()
         self._last_feed = now
+        return gap_s
 
     def _velocity_cap_for(self, torque_Nm):
         """A vel_limit that can't clip `torque_Nm` at stall."""

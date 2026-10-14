@@ -2,7 +2,7 @@
 
 A lever arm on the motor shaft pushes on the OHAUS balance while the ODrive holds torque levels; the fit gives k, then G = 4 × k.
 """
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from bench.experiments.static_gain import analysis, procedure, report
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Measurement, Settings
@@ -40,8 +40,13 @@ def record(arguments):
 
 def analyze(run, show=True):
     meta = run.meta
-    arm_length_m = meta["settings"]["arm_length_m"]
-    results, fits = analysis.fit(run.rows("data", Measurement), arm_length_m, meta["odrive"]["torque_constant_NmA"])
+    settings = meta["settings"]
+    arm_length_m = settings["arm_length_m"]
+    results, fits = analysis.fit(
+        run.rows("data", Measurement), arm_length_m, meta["odrive"]["torque_constant_NmA"], settings.get("minimum_scale_readings"),
+    )
+    if not run.finished:
+        results = replace(results, warnings=["the recording didn't finish (no finished.json).", *results.warnings])
     run.write_json("results", asdict(results))
     report.print_report(run.name, arm_length_m, results)
     report.plot(run, fits, results, show)

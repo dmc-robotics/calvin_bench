@@ -102,6 +102,18 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 ### Bench check (needs the user's go-ahead)
 - [ ] Arm once at zero torque: does ODrive 0.6.12 flag the watchdog while idle? If so, `armed()` fails every hold with "Clear the errors".
 
+## Pre-run review of 2026-10-14 (before the first real experiment 2 run)
+
+- [x] `odrive_config.json` is dumped in `connect()` before the velocity cap (`drive.configuration`), so it shows the real `vel_limit`.
+- [x] `odrive.csv`: every hold-loop tick (time, feed gap, position, velocity, Iq setpoint and measured, vbus), overshoot and repeats included.
+- [x] `meta.json` gets `started_at` and `code` (commit, uncommitted changes); `code.diff` holds `git diff HEAD` when there are changes.
+- [x] Temperatures in `data.csv` are read right after the hold, not before the rest.
+- [x] Too few balance readings are used and flagged as low confidence (printed, and an analysis warning), never typed in. No readings at all stops the run.
+- [x] The hold loop sleeps to the next tick instead of a fixed 0.02 s, so read time doesn't add to the feed gap. Each hold prints its largest gap.
+- [x] No ODrive found raises `BenchError`; `scale.csv` gets a `net` column; the analysis warns about a run without `finished.json`; `instructions/02` fixes (step reference, don't save the raised `current_soft_max`).
+- [ ] **Bench check script (needs the user's go-ahead):** arm at zero torque while polling the balance (largest feed gap; does 0.6.12 flag the watchdog while idle?), then 0.02 N·m with the arm on the scale (Iq sign with `motor.direction = -1`; which way positive torque turns the shaft).
+- [ ] Depending on the check: correct the Iq sign in the analysis (the clipping warning and Kt fit assume Iq has the command's sign), a setup line in `instructions/02` on finding the positive direction, and stop the run if the first level reads below the tare ("scale on the wrong side?").
+
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)
 
 - [ ] **H3:** use one shared waveform procedure, `record_waveform(link, waveform, run)` (load → play → stream rows). A waveform experiment supplies only `Settings`, a waveform, `fit` and `report`, so it doesn't copy static-gain's `procedure.py`.

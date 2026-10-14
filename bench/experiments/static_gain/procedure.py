@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 
 from bench import console
 from bench.errors import BenchError
-from bench.experiments.static_gain.data import DIRECTIONS, NAME, Measurement, ScaleSample
+from bench.experiments.static_gain.data import DIRECTIONS, NAME, Measurement, ODriveSample, ScaleSample
 from bench.hardware.odrive_usb import ODriveUsb, Signals
 from bench.hardware.ohaus_adventurer import OhausAdventurer
 from bench.runs import Run
@@ -46,7 +46,7 @@ def record(settings):
             "velocity_cap_rev_per_s": drive.velocity_cap_rev_per_s,
             "scale": scale.identity() if scale else None,  # None: typed in
         })
-        run.write_json("odrive_config", drive.config())
+        run.write_json("odrive_config", drive.configuration)
         print(f"Recording to {run.directory}")
 
         session = Session(settings, drive, scale, run)
@@ -82,7 +82,7 @@ class Session:
         if self.scale:
             print(f"Motor idle. Reading the {label.lower()} for {self.settings.hold_s} s...")
             samples = [
-                ScaleSample(hold, direction, "tare", 0.0, round(time_s, 3), weight.value, weight.stable)
+                ScaleSample(hold, direction, "tare", 0.0, round(time_s, 3), weight.value, weight.stable, weight.net)
                 for time_s, weight in self.scale.sample(self.settings.hold_s)
             ]
         self.run.append("scale", *samples)
@@ -94,16 +94,19 @@ class Session:
         """Hold one torque level and record it. Typing r instead of a reading repeats the hold under a new number."""
         label = f"{torque_Nm:+.3f} N·m ({approach})"
         while True:
-            temperatures = wait_until_cool(self.drive)
+            wait_until_cool(self.drive)
             self._rest()
             hold = self._next_hold()
-            signals, samples = self._hold(hold, direction, approach, torque_Nm)
-            self.run.append("scale", *samples)
-            reading = self._reading(samples, label, allow_repeat=True)
+            signals, scale_samples, odrive_samples = self._hold(hold, direction, approach, torque_Nm)
+            temperatures = self.drive.temperatures()
+            self.run.append("scale", *scale_samples)
+            self.run.append("odrive", *odrive_samples)
+            reading = self._reading(scale_samples, label, allow_repeat=True)
             if reading is not console.REPEAT:
                 break
         self.run.append("data", measurement(hold, direction, approach, torque_Nm, reading, temperatures, signals))
-        print(f"  {label}: {reading}, Iq {signals.iq_measured_A:+.2f} A, {temperatures}")
+        largest_feed_gap_s = max(sample.feed_gap_s for sample in odrive_samples)
+        print(f"  {label}: {reading}, Iq {signals.iq_measured_A:+.2f} A, {temperatures}, feed gap ≤ {1000 * largest_feed_gap_s:.0f} ms")
 
     def _next_hold(self):
         hold = self._holds
@@ -112,9 +115,10 @@ class Session:
 
     def _hold(self, hold, direction, approach, torque_Nm):
         """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout.
-        Returns (Signals averaged over the last sample_s, ScaleSamples)."""
+        Returns (Signals averaged over the last sample_s, ScaleSamples, ODriveSamples)."""
         settings = self.settings
         weights = []
+        ticks = []
 
         def poll_scale():
             now = time.monotonic()
@@ -126,43 +130,48 @@ class Session:
         try:
             with self.drive.armed():
                 if approach == "above":
-                    self.drive.apply(torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s, during)
+                    ticks += self.drive.apply(torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s, during)
                 started_at = time.monotonic()
-                ticks = self.drive.apply(torque_Nm, settings.hold_s, during)
+                ticks += self.drive.apply(torque_Nm, settings.hold_s, during)
         finally:
             self._last_hold_end = time.monotonic()
         window_start = started_at + settings.hold_s - settings.sample_s
-        if not (window := [signals for when, signals in ticks if when >= window_start]):
+        if not (window := [tick for tick in ticks if tick.time_s >= window_start]):
             raise BenchError(f"No ODrive readings in the last {settings.sample_s} s of the hold: sample_s is shorter than the hold loop's tick.")
-        signals = Signals(*map(statistics.fmean, zip(*window)))
-        samples = [
-            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable)
+        signals = Signals(*(statistics.fmean(getattr(tick, name) for tick in window) for name in Signals._fields))
+        scale_samples = [
+            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable, weight.net)
             for when, weight in weights
         ]
-        return signals, samples
+        odrive_samples = [
+            ODriveSample(
+                hold, direction, approach, torque_Nm, round(tick.time_s - started_at, 3), round(tick.feed_gap_s, 4),
+                tick.position_rev, tick.velocity_rev_per_s, tick.iq_setpoint_A, tick.iq_measured_A, tick.vbus_V,
+            )
+            for tick in ticks
+        ]
+        return signals, scale_samples, odrive_samples
 
     def _reading(self, samples, label, allow_repeat=False):
-        """The settled reading from the balance's samples, or a typed one when there's no scale or too few samples.
-        console.REPEAT if they typed r."""
+        """The reading from the balance's samples, or a typed one without a scale (console.REPEAT if they typed r).
+        Fewer balance readings than minimum_scale_readings are used anyway and flagged as low confidence."""
         if self.scale:
-            reading = settle(samples, self.settings.hold_s - self.settings.sample_s, self.settings.minimum_scale_readings)
-            if reading:
-                return reading
-            question = f"{label}: too few scale readings. Type it (g)"
-        else:
-            question = f"{label}: scale reading (g)"
-        grams = console.ask_number(f"{question}{', r to repeat' if allow_repeat else ''}: ", allow_repeat)
+            if (reading := settle(samples, self.settings.hold_s - self.settings.sample_s)) is None:
+                raise BenchError(f"{label}: no balance readings in the last {self.settings.sample_s} s. Motor idle.")
+            if reading.samples < self.settings.minimum_scale_readings:
+                print(f"  {label}: low confidence, only {reading.samples} balance readings (expected {self.settings.minimum_scale_readings}+).")
+            return reading
+        grams = console.ask_number(f"{label}: scale reading (g){', r to repeat' if allow_repeat else ''}: ", allow_repeat)
         return grams if grams is console.REPEAT else Reading(grams)
 
     def _rest(self):
         time.sleep(max(0.0, self._last_hold_end + self.settings.rest_s - time.monotonic()))
 
 
-def settle(samples, window_start_s, minimum):
-    """Mean, spread and counts of the samples from `window_start_s` on, or None if there are fewer than `minimum`.
+def settle(samples, window_start_s):
+    """Mean, spread and counts of the samples from `window_start_s` on, or None if there are none.
     The motor can keep the balance from ever reporting stable, so unstable readings count too; the stable count says how settled it was."""
-    window = [sample for sample in samples if sample.time_s >= window_start_s]
-    if len(window) < minimum:
+    if not (window := [sample for sample in samples if sample.time_s >= window_start_s]):
         return None
     grams = [sample.scale_g for sample in window]
     return Reading(
@@ -173,7 +182,6 @@ def settle(samples, window_start_s, minimum):
 def wait_until_cool(drive):
     while (temperatures := drive.temperatures()).too_hot:
         console.pause(f"Too hot ({temperatures}). Let it cool.")
-    return temperatures
 
 
 def measurement(hold, direction, approach, torque_Nm, reading, temperatures, signals=None):

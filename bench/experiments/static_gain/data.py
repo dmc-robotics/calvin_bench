@@ -1,4 +1,5 @@
-"""What a static-gain run holds: its Settings (in meta.json), data.csv rows (Measurement) and scale.csv rows (ScaleSample)."""
+"""What a static-gain run holds: its Settings (in meta.json), data.csv rows (Measurement), scale.csv rows (ScaleSample)
+and odrive.csv rows (ODriveSample)."""
 import math
 from dataclasses import dataclass
 
@@ -26,7 +27,7 @@ class Settings:
     hold_s: float = 3.0  # the averaged last sample_s starts 0.5 s after the balance's typical 1.5 s settling
     sample_s: float = 1.0  # averaged at the end of each hold and tare
     rest_s: float = 5.0  # minimum time idle between holds
-    minimum_scale_readings: int = 4  # in the averaged window; ~8 normally
+    minimum_scale_readings: int = 4  # in the averaged window (~8 normally); fewer is recorded but flagged as low confidence
 
     def __post_init__(self):
         """Refuse bad settings however they were built, listing every problem."""
@@ -93,6 +94,23 @@ class ScaleSample:
     time_s: float
     scale_g: float
     stable: bool
+    net: bool  # True if the balance had a tare set: someone pressed Tare
+
+
+@dataclass(frozen=True)
+class ODriveSample:
+    """An odrive.csv row: one pass of the hold loop, raw ODrive units. time_s as in scale.csv."""
+    hold: int
+    direction: str
+    approach: str
+    torque_command_Nm: float  # the level; the overshoot's own torque is torque_command_Nm ± overshoot_Nm while time_s < 0
+    time_s: float
+    feed_gap_s: float  # since the watchdog's previous feed
+    position_rev: float
+    velocity_rev_per_s: float
+    iq_setpoint_A: float
+    iq_measured_A: float
+    vbus_V: float
 
 
 def is_positive(value):
