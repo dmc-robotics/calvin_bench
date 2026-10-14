@@ -6,6 +6,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 
 from bench import console
+from bench.errors import BenchError
 from bench.experiments.static_gain.data import DIRECTIONS, NAME, Measurement, ScaleSample
 from bench.hardware.odrive_usb import ODriveUsb, Signals
 from bench.hardware.ohaus_adventurer import OhausAdventurer
@@ -16,14 +17,14 @@ from bench.runs import Run
 class Reading:
     """The scale reading for one tare or hold: a mean over the end of it, or a typed value (no spread or counts)."""
     grams: float
-    std_g: float | None = None
+    standard_deviation_g: float | None = None
     samples: int | None = None
     stable_samples: int | None = None
 
     def __str__(self):
         if self.samples is None:
             return f"{self.grams:.1f} g"
-        return f"{self.grams:.1f} g ± {self.std_g:.1f} ({self.stable_samples}/{self.samples} stable)"
+        return f"{self.grams:.1f} g ± {self.standard_deviation_g:.1f} ({self.stable_samples}/{self.samples} stable)"
 
 
 def record(settings):
@@ -43,7 +44,7 @@ def record(settings):
             "settings": asdict(settings),
             "odrive": identity,
             "velocity_cap_rev_per_s": drive.velocity_cap_rev_per_s,
-            "scale": scale.identity() if scale else "manual",
+            "scale": scale.identity() if scale else None,  # None: typed in
         })
         run.write_json("odrive_config", drive.config())
         print(f"Recording to {run.directory}")
@@ -56,6 +57,7 @@ def record(settings):
                 for level in settings.levels_Nm:
                     session.level(direction, approach, sign * level)
             session.tare(direction, again=True)
+        run.finish()
 
     print(f"\nDone. Analyze with: bench analyze {run.directory}")
 
@@ -130,7 +132,9 @@ class Session:
         finally:
             self._last_hold_end = time.monotonic()
         window_start = started_at + settings.hold_s - settings.sample_s
-        signals = Signals(*map(statistics.fmean, zip(*(signals for when, signals in ticks if when >= window_start))))
+        if not (window := [signals for when, signals in ticks if when >= window_start]):
+            raise BenchError(f"No ODrive readings in the last {settings.sample_s} s of the hold: sample_s is shorter than the hold loop's tick.")
+        signals = Signals(*map(statistics.fmean, zip(*window)))
         samples = [
             ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable)
             for when, weight in weights
@@ -176,7 +180,7 @@ def measurement(hold, direction, approach, torque_Nm, reading, temperatures, sig
     iq_setpoint, iq_measured, vbus = (round(value, 4) for value in signals) if signals else (None, None, None)
     return Measurement(
         hold=hold, direction=direction, approach=approach, torque_command_Nm=torque_Nm,
-        scale_g=reading.grams, scale_std_g=reading.std_g, scale_samples=reading.samples, scale_stable_samples=reading.stable_samples,
+        scale_g=reading.grams, scale_standard_deviation_g=reading.standard_deviation_g, scale_samples=reading.samples, scale_stable_samples=reading.stable_samples,
         iq_setpoint_A=iq_setpoint, iq_measured_A=iq_measured, vbus_V=vbus,
         fet_temperature_C=temperatures.fet_C, motor_temperature_C=temperatures.motor_C,
     )

@@ -65,6 +65,8 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert holds == list(range(len(holds)))
     assert {sample.hold for sample in run.rows("scale", ScaleSample)} == set(holds)  # every tare and hold has its scale samples
 
+    assert run.finished
+
     static_gain.analyze(run, show=False)
     results = run.read_json("results")
     assert results["k"] == pytest.approx(device.axis0.k, rel=1e-3)
@@ -98,7 +100,7 @@ def test_without_a_scale_the_readings_are_typed(device, runs_directory, monkeypa
     assert [row.scale_g for row in rows] == readings
     assert all(row.scale_samples is None for row in rows)
     assert not run.path("scale.csv").exists()
-    assert run.meta["scale"] == "manual"
+    assert run.meta["scale"] is None
 
 
 def test_r_repeats_a_level(device, runs_directory, monkeypatch):
@@ -129,6 +131,14 @@ def test_the_balance_going_to_standby_mid_hold_stops_the_run_with_the_motor_idle
     assert device.axis0.is_idle
     assert device.axis0.controller.config.vel_limit == 10.0
     assert scale.closed
+    assert not only_run(runs_directory).finished
+
+
+def test_an_averaging_window_shorter_than_a_tick_is_refused_with_the_motor_idle(device, runs_directory, monkeypatch):
+    monkeypatch.setattr(builtins, "input", Bench([50]))
+    with pytest.raises(BenchError, match="No ODrive readings"):
+        procedure.record(Settings("left", ARM_LENGTH_M, **{**QUICK, "sample_s": 0.001}))
+    assert device.axis0.is_idle
 
 
 def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, scale, runs_directory, monkeypatch):

@@ -39,3 +39,18 @@ def test_a_missing_column_is_refused(tmp_path):
     (tmp_path / "table.csv").write_text("count,name,value\n1,a,0.5\n")
     with pytest.raises(BenchError, match="missing columns: maybe, flag"):
         Run(tmp_path).rows("table", Row)
+
+
+def test_a_missing_file_is_refused(tmp_path):
+    run = Run(tmp_path)
+    with pytest.raises(BenchError, match="has no meta.json"):
+        run.meta
+    with pytest.raises(BenchError, match="has no table.csv"):
+        run.rows("table", Row)
+
+
+def test_a_run_is_finished_once_marked(tmp_path):
+    run = Run(tmp_path)
+    assert not run.finished
+    run.finish()
+    assert run.finished

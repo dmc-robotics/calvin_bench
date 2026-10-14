@@ -92,12 +92,12 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] Tidy: one name for the port (`connection` vs `_serial`), `print_every(True)` refused, neutral refusal wording in `readings()`.
 
 ### 3. CLI and docs
-- [ ] `Run.read_json`/`Run.rows` raise `BenchError` for a missing file (wrong path, run aborted before `data.csv`).
-- [ ] `instructions/02` step 6: `--from-above` at 0.30 N·m needs 12.0 A, so also raise `current_soft_max` to ~12 A.
-- [ ] `Settings` requires `sample_s ≥ 0.1` (an empty averaging window crashes after the hold).
-- [ ] Rename `std_g`/`scale_std_g` to `standard_deviation_g`/`scale_standard_deviation_g` (no recorded runs yet).
-- [ ] `meta["scale"]` is `None` without a balance, not `"manual"`.
-- [ ] A run marks itself finished (e.g. `end.json`), so later batch analyses (experiment 9) can skip aborted runs.
+- [x] `Run.read_json`/`Run.rows` raise `BenchError` for a missing file (wrong path, run aborted before `data.csv`).
+- [x] `instructions/02` step 6: `--from-above` at 0.30 N·m needs 12.0 A, so also raise `current_soft_max` to ~12 A.
+- [x] An empty averaging window (a `sample_s` shorter than a tick) raises `BenchError` after the hold instead of a TypeError. Checked in the procedure, not `Settings`: the floor is the hold loop's tick, and a 0.1 s floor would slow the procedure tests.
+- [x] Rename `std_g`/`scale_std_g` to `standard_deviation_g`/`scale_standard_deviation_g` (no recorded runs yet).
+- [x] `meta["scale"]` is `None` without a balance, not `"manual"`.
+- [x] A run marks itself finished (`finished.json`, `Run.finished`), so later batch analyses (experiment 9) can skip aborted runs.
 
 ### Bench check (needs the user's go-ahead)
 - [ ] Arm once at zero torque: does ODrive 0.6.12 flag the watchdog while idle? If so, `armed()` fails every hold with "Clear the errors".

@@ -1,4 +1,5 @@
-"""Run folders: runs/<timestamp>_<experiment>_<motor>/ holding meta.json, CSV tables and JSON files.
+"""Run folders: runs/<timestamp>_<experiment>_<motor>/ holding meta.json, CSV tables and JSON files, and finished.json
+once the recording ended normally (an aborted run has none).
 
 The only code that reads or writes run folders. Rows go in as dataclasses (their fields are the CSV columns)
 and come back as the same dataclasses.
@@ -36,6 +37,14 @@ class Run:
     def meta(self):
         return self.read_json("meta")
 
+    @property
+    def finished(self):
+        return self.path("finished.json").exists()
+
+    def finish(self):
+        """Mark the recording as ended normally, so batch analyses can skip aborted runs."""
+        self.write_json("finished", {"finished_at": datetime.now().isoformat(timespec="seconds")})
+
     def path(self, filename):
         return self.directory / filename
 
@@ -43,7 +52,7 @@ class Run:
         self.path(f"{name}.json").write_text(json.dumps(data, indent=2) + "\n")
 
     def read_json(self, name):
-        return json.loads(self.path(f"{name}.json").read_text())
+        return json.loads(self._existing(f"{name}.json").read_text())
 
     def append(self, table, *rows):
         """Append dataclass rows to <table>.csv, writing the header (the dataclass fields) when the file is new."""
@@ -60,7 +69,7 @@ class Run:
     def rows(self, table, row_type):
         """<table>.csv as `row_type` dataclasses: each cell converted to its field's type, empty cells to None."""
         types = {field.name: field.type for field in fields(row_type)}
-        with self.path(f"{table}.csv").open() as file:
+        with self._existing(f"{table}.csv").open() as file:
             reader = csv.DictReader(file)
             if missing := [name for name in types if name not in (reader.fieldnames or [])]:
                 raise BenchError(f"{self.name}/{table}.csv is missing columns: {', '.join(missing)}.")
@@ -68,6 +77,11 @@ class Run:
                 row_type(**{name: cell(row[name], types[name], f"{table}.csv line {reader.line_num}, {name}") for name in types})
                 for row in reader
             ]
+
+    def _existing(self, filename):
+        if not (path := self.path(filename)).exists():
+            raise BenchError(f"{self.directory} has no {filename}.")
+        return path
 
 
 def cell(text, field_type, where):

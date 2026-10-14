@@ -73,7 +73,7 @@ class Measurement:
     approach: str  # tare, below or above
     torque_command_Nm: float
     scale_g: float  # mean over the end of the hold, or typed in
-    scale_std_g: float | None  # None for typed readings, as are the counts
+    scale_standard_deviation_g: float | None  # None for typed readings, as are the counts
     scale_samples: int | None
     scale_stable_samples: int | None
     iq_setpoint_A: float | None

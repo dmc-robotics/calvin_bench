@@ -28,7 +28,7 @@ def make_measurements(from_above=False, setpoint_error=0.0, tare_drift_g=0.0):
                 grams = TARE_G + tare_drift_g / 2 + sign * torque / ARM_LENGTH_M / units.STANDARD_GRAVITY * 1000
                 measurements.append(Measurement(
                     hold=len(measurements), direction=direction, approach=approach, torque_command_Nm=command,
-                    scale_g=grams, scale_std_g=0.1, scale_samples=8, scale_stable_samples=8,
+                    scale_g=grams, scale_standard_deviation_g=0.1, scale_samples=8, scale_stable_samples=8,
                     iq_setpoint_A=command / TORQUE_CONSTANT_NMA * (1 + setpoint_error), iq_measured_A=command / TORQUE_CONSTANT_NMA,
                     vbus_V=15.8, fet_temperature_C=30.0, motor_temperature_C=None,
                 ))
@@ -39,7 +39,7 @@ def make_measurements(from_above=False, setpoint_error=0.0, tare_drift_g=0.0):
 def tare(hold, direction, grams):
     return Measurement(
         hold=hold, direction=direction, approach="tare", torque_command_Nm=0.0,
-        scale_g=grams, scale_std_g=0.0, scale_samples=8, scale_stable_samples=8,
+        scale_g=grams, scale_standard_deviation_g=0.0, scale_samples=8, scale_stable_samples=8,
         iq_setpoint_A=None, iq_measured_A=None, vbus_V=None, fet_temperature_C=30.0, motor_temperature_C=None,
     )
 
