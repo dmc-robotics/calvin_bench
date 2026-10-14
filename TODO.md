@@ -77,11 +77,45 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
   - [x] Experiment 2: `connect(port, unit="g")`, `DEFAULT_PORT` moves to `static_gain`, `hold_s` 2.5 → 3.0 s, the CLI catches `OhausError`, balance settings in `instructions/02`.
   - [x] Docs: CLAUDE.md Scale section, PLAN.md decision.
 
+## Review of 2026-10-14 (architecture + code review)
+
+### 1. Safety, in the ODrive driver
+- [x] Replace `DURING_LIMIT_S` with a check of the time between watchdog feeds: raise if a gap passes half the configured `watchdog_timeout`; the accepted timeout range is now 0.1–0.2 s. The old 0.05 s `during()` limit equalled the shortest accepted timeout, so the sleep and USB reads could push a gap past it.
+- [x] Torque guard rejects NaN: `if not abs(torque_Nm) <= limit`.
+- [x] `armed()` refuses a motor that's too hot; `wait_until_cool` stays as the procedure's prompt.
+- [x] `FakeAxis`: a watchdog that idles the axis after a feed gap longer than `watchdog_timeout`, and a settable `vel_estimate`. Tests: a feed gap aborts, a speed slip aborts, Ctrl-C mid-hold ends idle with `vel_limit` restored, NaN and a hot motor are refused.
+
+### 2. Balance driver
+- [ ] `poll()` clears the pending request on any reply line, not only a weight (an unparseable reply slows it to one request per `REPLY_TIMEOUT_S`).
+- [ ] Wrap pyserial I/O errors (unplugged balance) as `OhausError`.
+- [ ] After `clear()` resets the input, drop the partial line up to the next line break (matters during a print mode).
+- [ ] Tidy: one name for the port (`connection` vs `_serial`), `print_every(True)` refused, neutral refusal wording in `readings()`.
+
+### 3. CLI and docs
+- [ ] `Run.read_json`/`Run.rows` raise `BenchError` for a missing file (wrong path, run aborted before `data.csv`).
+- [ ] `instructions/02` step 6: `--from-above` at 0.30 N·m needs 12.0 A, so also raise `current_soft_max` to ~12 A.
+- [ ] `Settings` requires `sample_s ≥ 0.1` (an empty averaging window crashes after the hold).
+- [ ] Rename `std_g`/`scale_std_g` to `standard_deviation_g`/`scale_standard_deviation_g` (no recorded runs yet).
+- [ ] `meta["scale"]` is `None` without a balance, not `"manual"`.
+- [ ] A run marks itself finished (e.g. `end.json`), so later batch analyses (experiment 9) can skip aborted runs.
+
+### Bench check (needs the user's go-ahead)
+- [ ] Arm once at zero torque: does ODrive 0.6.12 flag the watchdog while idle? If so, `armed()` fails every hold with "Clear the errors".
+
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)
 
 - [ ] **H3:** use one shared waveform procedure, `record_waveform(link, waveform, run)` (load → play → stream rows). A waveform experiment supplies only `Settings`, a waveform, `fit` and `report`, so it doesn't copy static-gain's `procedure.py`.
 - [ ] Write 1 kHz streams through an open writer instead of reopening the file on every `Run.append`.
 - [ ] Read 1 kHz tables back as columns (numpy structured arrays or pandas), not row objects.
+- [ ] **Teensy protocol, decide before M2** (it crosses firmware, `link.py` and every waveform run's CSV):
+  - Torque *and* velocity mode (experiment 3's bench version is a velocity staircase; its stiction ramp is torque).
+  - Waveforms longer than Teensy RAM (experiment 12: 60 s; experiment 11's warm-up: 5 min): chunked upload or `repeat n`.
+  - The host sends a heartbeat every ≤ 50 ms during `play`; the Teensy's link timeout is defined on it.
+  - Rows carry a sequence number and a dropped-sample counter (experiment 7).
+  - How a two-motor run is recorded (M4, experiments 6–7): a `motor` column or prefixed columns.
+- [ ] **ODrive USB stays plugged in, read-only, on M3 runs** (config dump, Kt, config checks). At M3 split a read-only `inspect()` out of `ODriveUsb.connect` for `link.py` to reuse; `connect` adds the stall-only checks and the velocity cap.
+- [ ] **`link.py` gets `ODriveUsb`'s lifecycle:** `TeensyLink.connect(motor, limits)` pushes the limits and checks the echo, idles on every exit; `play()` is the only way to move a motor. Update CLAUDE.md's safety-ownership line then.
+- [ ] **Analyses over several runs (M3–M5):** record inputs at record time (`meta["inputs"] = {"friction": "<run>"}`), add a `results(run)` entry point that reads `results.json` typed, mark held-out runs in meta, and put experiments 9/11/13 and export under one `bench compare`/`bench export` command rather than fake experiments.
 - [x] Move `NODE_IDS` (the motor names) out of `odrive_usb.py:20` once experiments that don't use the USB driver need `--motor`. Done early in step 3 (`bench/motors.py`).
 
 ## Leave alone

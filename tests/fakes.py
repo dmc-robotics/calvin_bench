@@ -1,6 +1,7 @@
 """Hardware stand-ins for the real drivers to talk to: a fake ODrive device for ODriveUsb, and a fake balance's serial
 port for OhausAdventurer that can weigh the torque the fake motor is holding."""
 import re
+import time
 from types import SimpleNamespace
 
 from odrive.enums import AxisState, ControlMode, InputMode
@@ -52,7 +53,9 @@ class FakeAxis:
         self.watchdog_feeds = 0
         self.slip_after_reads = None  # the shaft moves after this many position reads
         self.refuses_closed_loop = False
+        self.watchdog_tripped = False
         self._position_reads = 0
+        self._last_feed = None
         self._requested_state = AxisState.IDLE
         self.config = SimpleNamespace(
             can=SimpleNamespace(node_id=node_id),
@@ -76,11 +79,13 @@ class FakeAxis:
     def requested_state(self, state):
         if state == AxisState.CLOSED_LOOP_CONTROL:
             self.arm_count += 1
+        self.watchdog_tripped = False
         self._requested_state = state
 
     @property
     def current_state(self):
-        if self.refuses_closed_loop:
+        self._check_watchdog()
+        if self.refuses_closed_loop or self.watchdog_tripped:
             return AxisState.IDLE
         return self._requested_state
 
@@ -95,7 +100,15 @@ class FakeAxis:
         return self._requested_state == AxisState.IDLE and self.controller.input_torque == 0
 
     def watchdog_feed(self):
+        self._check_watchdog()
         self.watchdog_feeds += 1
+        self._last_feed = time.monotonic()
+
+    def _check_watchdog(self):
+        """Like the ODrive: in closed loop, a feed gap longer than watchdog_timeout idles the axis until the next request."""
+        closed_loop = self._requested_state == AxisState.CLOSED_LOOP_CONTROL
+        if closed_loop and self._last_feed is not None and time.monotonic() - self._last_feed > self.config.watchdog_timeout:
+            self.watchdog_tripped = True
 
 
 class FakeDevice:

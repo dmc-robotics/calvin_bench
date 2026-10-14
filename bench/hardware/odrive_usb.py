@@ -1,8 +1,8 @@
 """An ODrive S1 driven over its USB from the Mac (no Teensy, no CAN), for holding torque against a fixture.
 
 `connect()` is the only way in: it refuses the wrong or a misconfigured ODrive, caps vel_limit (not saved) and idles
-the axis on every exit. Torque goes on only through `apply()` inside `armed()`; together they feed the watchdog,
-abort on shaft motion and end idle. Units are ODrive's: rev, rev/s, motor-side N·m.
+the axis on every exit. Torque goes on only through `apply()` inside `armed()`; together they refuse a hot motor,
+feed the watchdog (aborting on a long gap between feeds), abort on shaft motion and end idle. Units are ODrive's: rev, rev/s, motor-side N·m.
 """
 import time
 from contextlib import contextmanager
@@ -25,9 +25,9 @@ SPEED_LIMIT_REV_PER_S = 0.5
 # must leave headroom at stall or it clips the torque.
 VELOCITY_CAP_HEADROOM = 1.5
 VELOCITY_CAP_MAX_REV_PER_S = 5.0
-WATCHDOG_TIMEOUT_RANGE_S = (0.05, 0.2)
-# While `during()` runs, nothing feeds the watchdog or checks for shaft motion.
-DURING_LIMIT_S = WATCHDOG_TIMEOUT_RANGE_S[0]
+WATCHDOG_TIMEOUT_RANGE_S = (0.1, 0.2)
+# A gap between watchdog feeds longer than this fraction of the timeout aborts the hold, well before the ODrive trips.
+FEED_GAP_FRACTION = 0.5
 FET_TEMPERATURE_LIMIT_C = 80.0
 MOTOR_TEMPERATURE_LIMIT_C = 60.0
 
@@ -57,7 +57,9 @@ class ODriveUsb:
         self._device = device
         self._axis = device.axis0
         self._highest_torque_Nm = 0.0  # what connect() checked the config for
+        self._feed_gap_limit_s = 0.0
         self._start_position = None  # set while armed
+        self._last_feed = None
         self.velocity_cap_rev_per_s = None
 
     @classmethod
@@ -73,6 +75,7 @@ class ODriveUsb:
             drive._require_ready(motor, highest_torque_Nm)
             drive._read_every_property_used()
             drive._highest_torque_Nm = highest_torque_Nm
+            drive._feed_gap_limit_s = FEED_GAP_FRACTION * drive._axis.config.watchdog_timeout
             drive.velocity_cap_rev_per_s = drive._velocity_cap_for(highest_torque_Nm)
             original_velocity_limit = controller_config.vel_limit
             controller_config.vel_limit = drive.velocity_cap_rev_per_s
@@ -88,32 +91,36 @@ class ODriveUsb:
     @contextmanager
     def armed(self):
         """Closed loop at zero torque for the block, idle on every exit. Inside it, only call `apply()`:
-        nothing else feeds the watchdog."""
+        nothing else feeds the watchdog. Refuses a motor that's too hot."""
         axis = self._axis
         try:
+            if (temperatures := self.temperatures()).too_hot:
+                raise BenchError(f"Too hot to arm ({temperatures}). Motor idle.")
             axis.controller.input_torque = 0
-            axis.watchdog_feed()
+            self._feed()
             axis.requested_state = AxisState.CLOSED_LOOP_CONTROL
             end = time.monotonic() + ARMING_S
             while time.monotonic() < end:
-                axis.watchdog_feed()
+                self._feed()
                 time.sleep(LOOP_PERIOD_S)
             self._require_closed_loop()
             self._start_position, _ = self.motion()
             yield
         finally:
             self._start_position = None
+            self._last_feed = None
             self.stop()
 
     def apply(self, torque_Nm, seconds, during=None):
         """Hold `torque_Nm` for `seconds` with the shaft stalled against the fixture. Only inside `armed()`.
 
         Every LOOP_PERIOD_S it feeds the watchdog, aborts if the shaft moved, records the signals and calls `during()`,
-        which must return within DURING_LIMIT_S. Returns (time.monotonic(), Signals) for each tick. The torque stays on.
+        which must return quickly: a gap between feeds over half the watchdog timeout aborts. Returns
+        (time.monotonic(), Signals) for each tick. The torque stays on.
         """
         if self._start_position is None:
             raise RuntimeError("apply() is only allowed inside armed().")
-        if abs(torque_Nm) > self._highest_torque_Nm:
+        if not abs(torque_Nm) <= self._highest_torque_Nm:  # also refuses NaN
             raise BenchError(
                 f"{torque_Nm:+.3f} N·m is above the {self._highest_torque_Nm:.3f} N·m the ODrive was checked for. Motor idled."
             )
@@ -122,19 +129,13 @@ class ODriveUsb:
         ticks = []
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            axis.watchdog_feed()
+            self._feed()
             position, velocity = self.motion()
             if abs(position - self._start_position) > MOTION_LIMIT_REV or abs(velocity) > SPEED_LIMIT_REV_PER_S:
                 raise BenchError("The shaft moved during the hold: the fixture slipped. Motor idled.")
             ticks.append((time.monotonic(), self.signals()))
             if during:
-                started = time.monotonic()
                 during()
-                if (took_s := time.monotonic() - started) > DURING_LIMIT_S:
-                    raise BenchError(
-                        f"Reading during the hold took {took_s:.2f} s (limit {DURING_LIMIT_S} s), "
-                        "starving the watchdog and the slip check. Motor idled."
-                    )
             time.sleep(LOOP_PERIOD_S)
         self._require_closed_loop()
         return ticks
@@ -216,6 +217,17 @@ class ODriveUsb:
         self.motion()
         self.signals()
         self.temperatures()
+
+    def _feed(self):
+        """Feed the watchdog, first aborting if the last feed was too long ago (something in the loop blocked)."""
+        now = time.monotonic()
+        if self._last_feed is not None and (gap_s := now - self._last_feed) > self._feed_gap_limit_s:
+            raise BenchError(
+                f"{gap_s:.3f} s between watchdog feeds (limit {self._feed_gap_limit_s:.3f} s, half the watchdog timeout): "
+                "something in the hold loop blocked. Motor idled."
+            )
+        self._axis.watchdog_feed()
+        self._last_feed = now
 
     def _velocity_cap_for(self, torque_Nm):
         """A vel_limit that can't clip `torque_Nm` at stall."""

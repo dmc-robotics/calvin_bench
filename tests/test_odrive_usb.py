@@ -1,10 +1,12 @@
 """The driver's safety guarantees, against a fake ODrive device."""
+import math
 import time
 
 import pytest
 from odrive.enums import AxisState
 
 from bench.errors import BenchError
+from bench.hardware import odrive_usb
 from bench.hardware.odrive_usb import ODriveUsb
 from fakes import TORQUE_CONSTANT_NMA
 
@@ -65,18 +67,42 @@ def test_segments_in_one_armed_block_stay_armed(device):
     assert device.axis0.torque_log[-1] == 0
 
 
-def test_apply_refuses_a_torque_above_the_checked_one(device):
+@pytest.mark.parametrize("torque_Nm", [-0.3, math.nan])
+def test_apply_refuses_a_torque_above_the_checked_one(device, torque_Nm):
     with ODriveUsb.connect("left", 0.25) as drive, pytest.raises(BenchError, match="checked for"):
         with drive.armed():
-            drive.apply(-0.3, 0.1)
+            drive.apply(torque_Nm, 0.1)
     assert all(torque == 0 for torque in device.axis0.torque_log)
     assert device.axis0.is_idle
+
+
+def test_arming_refuses_a_hot_motor(device):
+    device.axis0.motor.fet_thermistor.temperature = 85.0
+    with ODriveUsb.connect("left", 0.25) as drive, pytest.raises(BenchError, match="Too hot"):
+        with drive.armed():
+            drive.apply(0.1, 0.1)
+    assert device.axis0.arm_count == 0
+    assert device.axis0.is_idle
+
+
+def test_connect_refuses_a_watchdog_timeout_too_short_for_the_hold_loop(device):
+    device.axis0.config.watchdog_timeout = 0.05
+    with pytest.raises(BenchError, match="watchdog_timeout"), ODriveUsb.connect("left", 0.25):
+        pass
 
 
 def test_apply_is_refused_outside_armed(device):
     with ODriveUsb.connect("left", 0.25) as drive, pytest.raises(RuntimeError, match="armed"):
         drive.apply(0.1, 0.1)
     assert all(torque == 0 for torque in device.axis0.torque_log)
+
+
+def test_shaft_speed_aborts_and_ends_idle(device):
+    with ODriveUsb.connect("left", 0.25) as drive:
+        with pytest.raises(BenchError, match="shaft moved"), drive.armed():
+            device.axis0.vel_estimate = 1.0
+            drive.apply(0.1, 0.5)
+        assert device.axis0.is_idle
 
 
 def test_shaft_motion_aborts_and_ends_idle(device):
@@ -97,13 +123,36 @@ def test_a_failing_callback_ends_idle(device):
         assert device.axis0.is_idle
 
 
-def test_a_blocking_callback_aborts_and_ends_idle(device):
-    def blocking_scale():
-        time.sleep(0.06)
+def test_ctrl_c_mid_hold_ends_idle_with_the_velocity_limit_restored(device):
+    def interrupt():
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt), ODriveUsb.connect("left", 0.25) as drive, drive.armed():
+        drive.apply(0.1, 0.5, during=interrupt)
+    assert device.axis0.is_idle
+    assert device.axis0.controller.config.vel_limit == 10.0
+
+
+def test_a_slow_callback_aborts_before_the_watchdog_trips(device):
+    def slow_scale():
+        time.sleep(0.035)  # with the loop's 0.02 s sleep, past half the 0.1 s timeout
 
     with ODriveUsb.connect("left", 0.25) as drive:
-        with pytest.raises(BenchError, match="took"), drive.armed():
-            drive.apply(0.1, 0.5, during=blocking_scale)
+        with pytest.raises(BenchError, match="between watchdog feeds"), drive.armed():
+            drive.apply(0.1, 0.5, during=slow_scale)
+        assert device.axis0.is_idle
+    assert not device.axis0.watchdog_tripped
+
+
+def test_the_fake_watchdog_trips_on_a_gap_the_driver_misses(device, monkeypatch):
+    monkeypatch.setattr(odrive_usb, "FEED_GAP_FRACTION", 2.0)
+
+    def blocking_scale():
+        time.sleep(0.15)
+
+    with ODriveUsb.connect("left", 0.25) as drive:
+        with pytest.raises(BenchError, match="closed loop"), drive.armed():
+            drive.apply(0.1, 0.1, during=blocking_scale)
         assert device.axis0.is_idle
 
 

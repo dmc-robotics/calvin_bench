@@ -47,7 +47,7 @@ Before anything moves, the script checks the ODrive and refuses to start if:
 - it isn't in torque control + passthrough, or `enable_torque_mode_vel_limit` is off;
 - `vel_gain` isn't positive, or is so low that the velocity cap needed to hold the top level without clipping would be above 5 rev/s;
 - `torque_constant` isn't positive, or the top level needs more current than `current_soft_max`;
-- the watchdog is off or its timeout isn't 0.05–0.2 s.
+- the watchdog is off or its timeout isn't 0.1–0.2 s.
 
 It lists every problem at once. Fix them in odrivetool (experiment 1 sets all of these), save the config, and rerun.
 
@@ -55,9 +55,9 @@ While it runs:
 - `vel_limit` is lowered to a few rev/s (enough headroom not to clip the torque at stall) and restored at the end. It isn't saved.
 - The watchdog is fed during each hold. The motor is idle whenever the script waits for you. Ctrl-C idles it.
 - If the shaft moves during a hold (the arm slipped or missed the scale), the motor idles and the run stops.
-- If reading the balance ever holds up the loop for more than 0.05 s, the motor idles and the run stops: the watchdog and the slip check can't wait longer than that.
+- If anything (usually reading the balance) holds up the loop so the watchdog goes more than half its timeout without a feed, the motor idles and the run stops, before the ODrive's watchdog trips.
 - If the balance refuses to answer (standby, calibrating) or switches away from grams, the motor idles and the run stops with the reason.
-- Holds are at least 5 s apart, and it waits for you to let things cool if the FET passes 80 °C or the motor passes 60 °C. The motor temperature reads n/a if its thermistor isn't enabled on the ODrive.
+- Holds are at least 5 s apart, and it waits for you to let things cool if the FET passes 80 °C or the motor passes 60 °C; the driver itself won't arm a motor that hot. The motor temperature reads n/a if its thermistor isn't enabled on the ODrive.
 
 1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 5).
 2. It steps through the levels: 0.05, 0.10, 0.15, 0.20, 0.25 N·m motor-side by default (`--levels` changes them; at least 3). That's ≈ 2–10 A; with a 0.2 m arm it's roughly 25–130 g on the scale, so a 1 g scale gives a few % at the low end and better above.
