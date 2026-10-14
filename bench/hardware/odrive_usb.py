@@ -14,8 +14,7 @@ from odrive.enums import AxisState, ControlMode, InputMode
 from odrive.utils import backup_config, dump_errors
 
 from bench.errors import BenchError
-
-NODE_IDS = {"left": 1, "right": 2}
+from bench.motors import NODE_IDS
 
 LOOP_PERIOD_S = 0.02
 ARMING_S = 0.3

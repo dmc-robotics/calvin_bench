@@ -1,13 +1,15 @@
 """What a static-gain run holds: its Settings (in meta.json), data.csv rows (Measurement) and scale.csv rows (ScaleSample)."""
+import math
 from dataclasses import dataclass
 
 from bench.errors import BenchError
-from bench.hardware import scale
+from bench.motors import NODE_IDS
 
-EXPERIMENT = "static-gain"
+NAME = "static-gain"
 DIRECTIONS = {"positive": 1.0, "negative": -1.0}
 DEFAULT_LEVELS_NM = (0.05, 0.10, 0.15, 0.20, 0.25)
 DEFAULT_MAX_TORQUE_NM = 0.25
+MINIMUM_LEVELS = 3  # for a line fit
 
 
 @dataclass(frozen=True)
@@ -18,7 +20,7 @@ class Settings:
     levels_Nm: tuple[float, ...] = DEFAULT_LEVELS_NM  # torque magnitudes, motor-side
     from_above: bool = False  # add a pass approaching each level from above (stiction)
     max_torque_Nm: float = DEFAULT_MAX_TORQUE_NM
-    scale_port: str | None = scale.DEFAULT_PORT  # None: the readings are typed in
+    scale_port: str | None = None  # None: the readings are typed in
     overshoot_Nm: float = 0.05  # how far above a level the from-above pass starts
     overshoot_s: float = 0.5
     hold_s: float = 2.5
@@ -27,11 +29,32 @@ class Settings:
     minimum_scale_readings: int = 4  # in the averaged window; ~8 normally
 
     def __post_init__(self):
-        if self.highest_torque_Nm > self.max_torque_Nm:
-            raise BenchError(
-                f"Levels reach {self.highest_torque_Nm:.3f} N·m, above the max torque {self.max_torque_Nm:.3f} N·m. "
+        """Refuse bad settings however they were built, listing every problem."""
+        problems = []
+        if self.motor not in NODE_IDS:
+            problems.append(f"motor is {self.motor!r}, expected {' or '.join(NODE_IDS)}.")
+        for name in ("arm_length_m", "max_torque_Nm", "overshoot_Nm", "overshoot_s", "hold_s", "sample_s"):
+            if not is_positive(value := getattr(self, name)):
+                problems.append(f"{name} is {value}, expected a positive number.")
+        if self.arm_length_m >= 1:
+            problems.append(f"arm_length_m is {self.arm_length_m}: it's in meters, e.g. 0.200.")
+        if not all(map(is_positive, self.levels_Nm)):
+            problems.append(f"levels_Nm are {self.levels_Nm}, expected positive torque magnitudes.")
+        if len(set(self.levels_Nm)) < MINIMUM_LEVELS:
+            problems.append(f"levels_Nm are {self.levels_Nm}, expected at least {MINIMUM_LEVELS} distinct levels for a line fit.")
+        if self.sample_s > self.hold_s:
+            problems.append(f"sample_s {self.sample_s} is longer than hold_s {self.hold_s}.")
+        if not self.rest_s >= 0:
+            problems.append(f"rest_s is {self.rest_s}, expected 0 or more.")
+        if self.minimum_scale_readings < 1:
+            problems.append(f"minimum_scale_readings is {self.minimum_scale_readings}, expected 1 or more.")
+        if self.levels_Nm and self.highest_torque_Nm > self.max_torque_Nm:
+            problems.append(
+                f"levels reach {self.highest_torque_Nm:.3f} N·m, above the max torque {self.max_torque_Nm:.3f} N·m. "
                 "Raise --max-torque deliberately if you mean it."
             )
+        if problems:
+            raise BenchError("Bad settings:\n  - " + "\n  - ".join(problems))
 
     @property
     def highest_torque_Nm(self):
@@ -68,3 +91,7 @@ class ScaleSample:
     time_s: float
     scale_g: float
     stable: bool
+
+
+def is_positive(value):
+    return math.isfinite(value) and value > 0

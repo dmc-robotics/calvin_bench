@@ -5,11 +5,10 @@ import numpy as np
 
 from bench import units
 from bench.errors import BenchError
-from bench.experiments.static_gain.data import DIRECTIONS
+from bench.experiments.static_gain.data import DIRECTIONS, MINIMUM_LEVELS
 
 TARE_DRIFT_LIMIT_G = 2.0
 CURRENT_MISMATCH_LIMIT = 0.02
-MINIMUM_LEVELS = 3
 
 
 @dataclass

@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 
 from bench import console
-from bench.experiments.static_gain.data import DIRECTIONS, EXPERIMENT, Measurement, ScaleSample
+from bench.experiments.static_gain.data import DIRECTIONS, NAME, Measurement, ScaleSample
 from bench.hardware.odrive_usb import ODriveUsb, Signals
 from bench.hardware.scale import Scale
 from bench.runs import Run
@@ -43,7 +43,7 @@ def record(settings):
         )
         console.confirm("Arm clamped, scale in place, CAN unplugged (or Teensy off), area clear, e-stop in reach?")
 
-        run = Run.create(EXPERIMENT, settings.motor, {
+        run = Run.create(NAME, settings.motor, {
             "settings": asdict(settings),
             "odrive": identity,
             "velocity_cap_rev_per_s": drive.velocity_cap_rev_per_s,

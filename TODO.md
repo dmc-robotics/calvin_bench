@@ -34,10 +34,11 @@ Why: a procedure currently has to call `connect()`, then `require_ready()`, then
 
 ### 3. M4: validation and defaults in one place
 Why: validation is split across argparse types, `Settings.__post_init__` and the driver. A `Settings` built in code skips the argparse checks, and nothing checks `0 < sample_s ≤ hold_s` (an empty average fails after the hold).
-- [ ] Move every settings check into `Settings.__post_init__`: positive values, arm length < 1 m, ≥ 3 distinct levels, `0 < sample_s ≤ hold_s`, and max torque. Keep the argparse types to parsing only (`static_gain/__init__.py:54–65`).
-- [ ] Remove the `data.py` → `bench.hardware.scale` import (`data.py:4,20`) and let the CLI supply the default port.
-- [ ] Keep one constant for the experiment name: `NAME = EXPERIMENT` (`static_gain/__init__.py:17`, `data.py:6`).
-- [ ] Tests for the `Settings` validation cases.
+- [x] Move every settings check into `Settings.__post_init__`: positive values, arm length < 1 m, ≥ 3 distinct levels, `0 < sample_s ≤ hold_s`, and max torque. Keep the argparse types to parsing only (`static_gain/__init__.py:54–65`).
+- [x] Remove the `data.py` → `bench.hardware.scale` import (`data.py:4,20`) and let the CLI supply the default port.
+- [x] Keep one constant for the experiment name: `NAME` in `data.py`, re-exported by the package (`EXPERIMENT` is gone).
+- [x] Move `NODE_IDS` to `bench/motors.py` so `Settings` can check the motor name without importing the driver. `arguments.py` is gone: nothing left to share.
+- [x] Tests for the `Settings` validation cases (`tests/test_static_gain_settings.py`).
 
 ### 4. M3: make `procedure.py` easier to read
 - [ ] Rename `Recorder` (`procedure.py:70`) to `Session`. Today it has the same name as InstinctusCore's ISR ring buffer `Recorder`.
@@ -72,13 +73,12 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [ ] **H3:** use one shared waveform procedure, `record_waveform(link, waveform, run)` (load → play → stream rows). A waveform experiment supplies only `Settings`, a waveform, `fit` and `report`, so it doesn't copy static-gain's `procedure.py`.
 - [ ] Write 1 kHz streams through an open writer instead of reopening the file on every `Run.append`.
 - [ ] Read 1 kHz tables back as columns (numpy structured arrays or pandas), not row objects.
-- [ ] Move `NODE_IDS` (the motor names) out of `odrive_usb.py:20` once experiments that don't use the USB driver need `--motor`.
+- [x] Move `NODE_IDS` (the motor names) out of `odrive_usb.py:20` once experiments that don't use the USB driver need `--motor`. Done early in step 3 (`bench/motors.py`).
 
 ## Leave alone
 
 - The `finally`/context-manager safety in `hold()` and `connect()`. The tests that use the real driver against `FakeDevice`.
 - Pure `analysis.fit`, `runs.py` as the only file I/O, `console.py` as the only place that prompts.
 - The experiment registry in `cli.py`, the unit-suffixed names, and the raw ODrive sign convention.
-- `arguments.py` as its own module: putting it in `cli.py` would create an import cycle.
 - `Signals`/`Weight` as `NamedTuple`s (`Signals` relies on being a tuple for `zip(*samples)`).
 - The tests' monkeypatching of module globals. It's acceptable at this size; pass the instruments in instead if it spreads.
