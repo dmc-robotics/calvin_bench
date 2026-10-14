@@ -123,7 +123,7 @@ class FakeBalance:
     """A serial port with an OHAUS Adventurer behind it, replying as the AX8201/E did when probed (firmware Sr 1.06).
 
     `load_g` is the gross load on the pan: a number, or a function for one that changes. A reply arrives `lag` reads
-    of `in_waiting` after its command, so a test can catch one in flight; `reset_input_buffer` only drops what has arrived.
+    of `in_waiting` after its command, so a test can catch one in flight. `unplugged` makes every read and write fail.
     """
 
     def __init__(self, load_g=0.0, unit="g", lag=0):
@@ -133,6 +133,7 @@ class FakeBalance:
         self.stable = True
         self.standby_after_weights = None  # goes into standby after this many weight replies
         self.silent = False
+        self.unplugged = False
         self.standby = False
         self.transition_commands = 0  # after OFF, commands still answered as awake; after ON, ignored
         self.calibrating = False
@@ -159,6 +160,7 @@ class FakeBalance:
 
     @property
     def in_waiting(self):
+        self._check_plugged_in()
         if self.continuous:
             self._reply(self.weight_line())
         for reply in self._in_flight:
@@ -171,13 +173,16 @@ class FakeBalance:
         data, self._arrived = self._arrived[:size], self._arrived[size:]
         return data
 
-    def reset_input_buffer(self):
-        self._arrived = b""
+    def arrive(self, data):
+        """Bytes arriving unasked, e.g. part of a line a print mode is sending."""
+        self._arrived += data
 
     def close(self):
+        self._check_plugged_in()
         self.closed = True
 
     def write(self, data):
+        self._check_plugged_in()
         command = data.decode("ascii").removesuffix("\r\n")
         self.received.append(command)
         if not self.silent:
@@ -248,6 +253,10 @@ class FakeBalance:
         else:
             return False
         return True
+
+    def _check_plugged_in(self):
+        if self.unplugged:
+            raise OSError(6, "Device not configured")
 
     def _enter_standby(self, standby):
         self.standby = standby

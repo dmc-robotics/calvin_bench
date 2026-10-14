@@ -45,7 +45,7 @@ Where the balance differs from the manual (trust the balance):
 """
 import re
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import NamedTuple
 
 import serial
@@ -85,10 +85,11 @@ class OhausAdventurer:
     for the balance's reply (~0.1 s). While a print mode runs, use readings(); the queries would take its lines as replies."""
 
     def __init__(self, connection, port, unit=None):
-        self._serial = connection
+        self._connection = connection
         self.port = port
         self.unit = unit
         self._buffer = b""
+        self._skip_to_line_end = False  # clear() stopped mid-line: the rest of that line isn't a reply
         self._requested_at = None
         self.firmware = None
         self.balance_id = None
@@ -108,7 +109,8 @@ class OhausAdventurer:
             balance._start()
             yield balance
         finally:
-            connection.close()
+            with suppress(OSError):  # an unplugged port; don't hide the error that brought us here
+                connection.close()
 
     def identity(self):
         return {"port": self.port, "balance_id": self.balance_id, "firmware": self.firmware}
@@ -132,9 +134,10 @@ class OhausAdventurer:
 
     def poll(self):
         """Request a weight if none is pending, without waiting. Returns the Weights that have arrived."""
-        weights = self.readings()
-        if weights:
+        lines = self._read_lines()
+        if lines:  # answered, even if not with a weight
             self._requested_at = None
+        weights = self._weights_in(lines)
         now = time.monotonic()
         if self._requested_at is None or now - self._requested_at > REPLY_TIMEOUT_S:
             self._write("IP")
@@ -144,12 +147,7 @@ class OhausAdventurer:
     def readings(self):
         """The Weights that have arrived, without waiting: replies to poll() or what a print mode sends.
         Other lines (OK!, a printout's labelled lines) are skipped; refusals raise."""
-        weights = []
-        for line in self._read_lines():
-            raise_if_refused(line, "IP")
-            if (weight := self._weight(line)) is not None:
-                weights.append(weight)
-        return weights
+        return self._weights_in(self._read_lines())
 
     def sample(self, seconds):
         """Poll for `seconds`. Returns (time from the start, Weight) pairs."""
@@ -162,12 +160,14 @@ class OhausAdventurer:
         return readings
 
     def clear(self):
-        """Wait out a polled reply still on its way, then drop everything received, so the next reading is fresh."""
+        """Wait out a polled reply still on its way, then drop everything received, so the next reading is fresh.
+        A line arriving as it clears (a print mode's) is dropped whole, not read from its middle."""
         if self._requested_at is not None:
             end = self._requested_at + REPLY_TIMEOUT_S
             while time.monotonic() < end and not self._read_lines():
                 time.sleep(POLL_PERIOD_S)
-        self._serial.reset_input_buffer()
+        self._read_lines()
+        self._skip_to_line_end = bool(self._buffer)
         self._buffer = b""
         self._requested_at = None
 
@@ -219,7 +219,7 @@ class OhausAdventurer:
 
     def print_every(self, seconds):
         """Send the whole printout block (header, weight, gross, net, tare) every `seconds` until stop_printing()."""
-        if not (isinstance(seconds, int) and 1 <= seconds <= 3600):
+        if not (isinstance(seconds, int) and not isinstance(seconds, bool) and 1 <= seconds <= 3600):
             raise ValueError(f"The print interval is {seconds} s, expected a whole number of seconds from 1 to 3600.")
         self._command(f"{seconds}P")
 
@@ -298,6 +298,14 @@ class OhausAdventurer:
             time.sleep(POLL_PERIOD_S)
         return None
 
+    def _weights_in(self, lines):
+        weights = []
+        for line in lines:
+            raise_if_refused(line, "a reading")
+            if (weight := self._weight(line)) is not None:
+                weights.append(weight)
+        return weights
+
     def _weight(self, line):
         weight = parse_weight(line)
         if weight is not None and self.unit is not None and weight.unit != self.unit:
@@ -305,12 +313,24 @@ class OhausAdventurer:
         return weight
 
     def _write(self, command):
-        self._serial.write(command.encode("ascii") + b"\r\n")
+        with self._port_errors():
+            self._connection.write(command.encode("ascii") + b"\r\n")
 
     def _read_lines(self):
-        self._buffer += self._serial.read(self._serial.in_waiting)
+        with self._port_errors():
+            self._buffer += self._connection.read(self._connection.in_waiting)
+        if self._skip_to_line_end:
+            _, newline, self._buffer = self._buffer.partition(b"\n")
+            self._skip_to_line_end = not newline
         *lines, self._buffer = self._buffer.split(b"\n")
         return [text for text in (line.decode("ascii", "replace").strip() for line in lines) if text]
+
+    @contextmanager
+    def _port_errors(self):
+        try:
+            yield
+        except OSError as error:  # pyserial's SerialException is one
+            raise OhausError(f"Lost the balance on {self.port}: {error}") from error
 
 
 def parse_weight(line):

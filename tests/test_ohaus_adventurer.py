@@ -156,8 +156,9 @@ def test_print_modes(fake, balance):
     balance.print_when_stable()
     balance.print_when_stable(include_zero=True)
     balance.print_every(2)
-    with pytest.raises(ValueError):
-        balance.print_every(2.5)
+    for seconds in (2.5, True, 0, 3601):
+        with pytest.raises(ValueError):
+            balance.print_every(seconds)
     balance.print_continuously()
     assert [weight.value for weight in balance.readings()] == [263.1]
     balance.stop_printing()
@@ -217,3 +218,23 @@ def test_clear_waits_out_a_reply_in_flight(fake, balance):
     while not readings:
         readings = balance.poll()
     assert readings == [Weight(100.0, "g", True, False)]
+
+
+def test_poll_asks_again_as_soon_as_any_reply_arrives(fake, balance, monkeypatch):
+    monkeypatch.setattr(FakeBalance, "weight_line", lambda self: "Overload")
+    balance.poll()
+    assert balance.poll() == []
+    assert fake.received == ["IP", "IP"]
+
+
+def test_clear_drops_a_line_caught_halfway(fake, balance):
+    fake.arrive(b"      26")
+    balance.clear()
+    fake.arrive(b"3.1     g\r\n      263.2     g\r\n")
+    assert balance.readings() == [Weight(263.2, "g", True, False)]
+
+
+def test_an_unplugged_balance_raises_ohaus_error_not_the_failed_close(fake):
+    with pytest.raises(OhausError, match="Lost the balance on /dev/cu.fake"), OhausAdventurer.connect(PORT) as balance:
+        fake.unplugged = True
+        balance.poll()

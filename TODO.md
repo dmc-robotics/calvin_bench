@@ -86,10 +86,10 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] `FakeAxis`: a watchdog that idles the axis after a feed gap longer than `watchdog_timeout`, and a settable `vel_estimate`. Tests: a feed gap aborts, a speed slip aborts, Ctrl-C mid-hold ends idle with `vel_limit` restored, NaN and a hot motor are refused.
 
 ### 2. Balance driver
-- [ ] `poll()` clears the pending request on any reply line, not only a weight (an unparseable reply slows it to one request per `REPLY_TIMEOUT_S`).
-- [ ] Wrap pyserial I/O errors (unplugged balance) as `OhausError`.
-- [ ] After `clear()` resets the input, drop the partial line up to the next line break (matters during a print mode).
-- [ ] Tidy: one name for the port (`connection` vs `_serial`), `print_every(True)` refused, neutral refusal wording in `readings()`.
+- [x] `poll()` clears the pending request on any reply line, not only a weight (an unparseable reply slows it to one request per `REPLY_TIMEOUT_S`).
+- [x] Wrap pyserial I/O errors (unplugged balance) as `OhausError`.
+- [x] After `clear()` resets the input, drop the partial line up to the next line break (matters during a print mode).
+- [x] Tidy: one name for the port (`connection` vs `_serial`), `print_every(True)` refused, neutral refusal wording in `readings()`.
 
 ### 3. CLI and docs
 - [ ] `Run.read_json`/`Run.rows` raise `BenchError` for a missing file (wrong path, run aborted before `data.csv`).
