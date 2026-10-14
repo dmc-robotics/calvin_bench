@@ -31,11 +31,11 @@ class Reading:
 
 
 def record(settings):
-    scale = OhausAdventurer(settings.scale_port) if settings.scale_port else None
-    if scale:
-        print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
-    print("Connecting to the ODrive over USB...")
-    with scale or nullcontext(), ODriveUsb.connect(settings.motor, settings.highest_torque_Nm) as drive:
+    print("Connecting over USB...")
+    scale_connection = OhausAdventurer.connect(settings.scale_port) if settings.scale_port else nullcontext()
+    with scale_connection as scale, ODriveUsb.connect(settings.motor, settings.highest_torque_Nm) as drive:
+        if scale:
+            print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
         identity = drive.identity()
         print(
             f"ODrive {identity['serial']}, node {identity['node_id']} ({settings.motor}). "

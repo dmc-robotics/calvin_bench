@@ -32,7 +32,7 @@ class Bench:
 @pytest.fixture
 def scale(device, monkeypatch):
     fake = FakeOhausAdventurer(device.axis0, ARM_LENGTH_M)
-    monkeypatch.setattr(procedure, "OhausAdventurer", lambda port: fake)
+    monkeypatch.setattr(procedure.OhausAdventurer, "connect", lambda port: fake)
     return fake
 
 

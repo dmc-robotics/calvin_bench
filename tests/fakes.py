@@ -107,7 +107,8 @@ class FakeDevice:
 
 
 class FakeOhausAdventurer:
-    """Reads the tare plus whatever the fake motor pushes onto it through an arm of `arm_length_m`."""
+    """Reads the tare plus whatever the fake motor pushes onto it through an arm of `arm_length_m`.
+    Stands in for what `OhausAdventurer.connect()` yields, so it is its own context manager."""
 
     port = "/dev/cu.fake"
     balance_id = "FAKE"

@@ -11,6 +11,7 @@ A weight reply takes ~90 ms, so polling gives ~8 readings/s.
 """
 import re
 import time
+from contextlib import contextmanager
 from typing import NamedTuple
 
 import serial
@@ -36,32 +37,28 @@ class Weight(NamedTuple):
 class OhausAdventurer:
     """`poll` never blocks, so a control loop (e.g. one feeding the ODrive watchdog) can read the balance as it runs."""
 
-    def __init__(self, port=DEFAULT_PORT):
-        try:
-            self._serial = serial.Serial(port, BAUD, timeout=0)
-        except serial.SerialException as error:
-            raise BenchError(f"Can't open the scale on {port}: {error}")
+    def __init__(self, connection, port):
+        self._serial = connection
         self.port = port
         self._buffer = b""
         self._requested_at = None
+        self.firmware = None
+        self.balance_id = None
+
+    @classmethod
+    @contextmanager
+    def connect(cls, port=DEFAULT_PORT):
+        """The balance on `port`, checked to answer and to weigh in grams. The port is closed on every exit."""
         try:
-            self.firmware = self._query(b"PV")
-            self.balance_id = self._query(b"PSN").partition(":")[2].strip()
-            reply = self._query(b"IP")
-            if parse_weight(reply) is None:
-                raise BenchError(f"The scale's weight reply didn't parse: {reply!r}.{REFUSED_HINT if reply == 'EL' else ''}")
-        except BaseException:
-            self.close()
-            raise
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exception):
-        self.close()
-
-    def close(self):
-        self._serial.close()
+            connection = serial.Serial(port, BAUD, timeout=0)
+        except serial.SerialException as error:
+            raise BenchError(f"Can't open the scale on {port}: {error}")
+        try:
+            scale = cls(connection, port)
+            scale._identify()
+            yield scale
+        finally:
+            connection.close()
 
     def identity(self):
         return {"port": self.port, "balance_id": self.balance_id, "firmware": self.firmware}
@@ -92,6 +89,13 @@ class OhausAdventurer:
         self._serial.reset_input_buffer()
         self._buffer = b""
         self._requested_at = None
+
+    def _identify(self):
+        self.firmware = self._query(b"PV")
+        self.balance_id = self._query(b"PSN").partition(":")[2].strip()
+        reply = self._query(b"IP")
+        if parse_weight(reply) is None:
+            raise BenchError(f"The scale's weight reply didn't parse: {reply!r}.{REFUSED_HINT if reply == 'EL' else ''}")
 
     def _query(self, command):
         self.clear()

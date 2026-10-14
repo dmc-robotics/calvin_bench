@@ -56,7 +56,7 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] Tests: the typed round trip, including `None` and `bool` cells. Analysis tests can pass `Measurement`s directly.
 
 ### 6. M5: one lifecycle shape for every instrument
-- [ ] Add `OhausAdventurer.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `OhausAdventurer.__init__` does I/O (`ohaus_adventurer.py:37–62`, `procedure.py:34–38`).
+- [x] Add `OhausAdventurer.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `OhausAdventurer.__init__` does I/O (`ohaus_adventurer.py:37–62`, `procedure.py:34–38`).
 
 ### 7. M6 + Low: docs and tidy-ups
 - [ ] `README.md:5` says Instinctus is "This Repo". Fix it to describe calvin_bench.
