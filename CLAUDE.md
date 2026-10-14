@@ -13,7 +13,8 @@ calvin_bench/
   PLAN.md              status, milestones, decisions
   instructions/        how to run each experiment
   firmware/bench/      Teensy bench sketch (bench.ino + src/), flashed in place of instinctus
-  bench/               Python package: the `bench` CLI, serial link, waveforms, runs, units, fitting
+  bench/               Python package: the `bench` CLI, hardware drivers, experiments, run folders, units
+  tests/               pytest: fake hardware (tests/fakes.py), driver safety, procedures end to end, analyses
   odrive/              ODrive config backups (the frozen baseline; committed)
   runs/                recorded runs (gitignored)
 ```
@@ -27,12 +28,18 @@ calvin_bench/
 
 ## Python
 
-- Python 3.15 (`.python-version`), managed with uv: `uv sync`, then `uv run bench --help`.
+- Python 3.15 (`.python-version`), managed with uv: `uv sync`, then `uv run bench --help`. Tests: `uv run pytest`.
+- Commands: `bench record <experiment> ...` writes a run folder; `bench analyze <run folder>` picks the analysis from its `meta.json`.
+- Layers, each with one job; keep them apart:
+  - `bench/hardware/`: drivers. `odrive_usb.py` owns motor safety (idle on every exit, watchdog fed, motion abort, config checks); `scale.py` is the balance; `link.py` the Teensy (M3).
+  - `bench/experiments/<name>/`: one package per experiment, entry points listed in `bench/experiments/__init__.py`. Inside: `data.py` (Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns), `procedure.py` (the steps; no safety logic of its own), `analysis.py` (pure: rows in, results with warnings out), `report.py` (printing, plots).
+  - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
+- New experiment: add a package with the same shape and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
 
 ## Scale (experiment 2)
 
-OHAUS Adventurer AX8201/E, 0.1 g, read by `bench static-gain record` (`Scale` in `bench/static_gain.py`; `--no-scale` to type readings).
-- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; the `--scale` default), 9600 baud, 8N1.
+OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `bench/hardware/scale.py`, standalone so other experiments can use the balance.
+- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_PORT`), 9600 baud, 8N1.
 - ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` (`?` = unstable) then blank lines; `PV` → `Sr 1.06`; `PSN` → `Balance ID: B816716802`.
 - ~90 ms per reply, ~8 readings/s when polled. Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
 

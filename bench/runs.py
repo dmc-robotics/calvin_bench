@@ -1,21 +1,59 @@
-"""Run folders: runs/<timestamp>_<experiment>_<motor>/ with meta.json and data.csv."""
+"""Run folders: runs/<timestamp>_<experiment>_<motor>/ holding meta.json, CSV tables and JSON files.
+
+The only code that reads or writes run folders. Rows go in as dataclasses (their fields are the CSV columns)
+and come back as dicts of strings, as csv.DictReader gives them.
+"""
+import csv
 import json
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 RUNS_DIRECTORY = Path(__file__).resolve().parent.parent / "runs"
 
 
-def create_run_directory(experiment, motor):
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    run_directory = RUNS_DIRECTORY / f"{timestamp}_{experiment}_{motor}"
-    run_directory.mkdir(parents=True)
-    return run_directory
+class Run:
+    def __init__(self, directory):
+        self.directory = Path(directory)
 
+    @classmethod
+    def create(cls, experiment, motor, meta):
+        """A new run folder with meta.json: `experiment` and `motor` (which `bench analyze` dispatches on), then `meta`."""
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        run = cls(RUNS_DIRECTORY / f"{timestamp}_{experiment}_{motor}")
+        run.directory.mkdir(parents=True)
+        run.write_json("meta", {"experiment": experiment, "motor": motor, **meta})
+        return run
 
-def write_meta(run_directory, meta):
-    (Path(run_directory) / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    @property
+    def name(self):
+        return self.directory.name
 
+    @property
+    def meta(self):
+        return self.read_json("meta")
 
-def read_meta(run_directory):
-    return json.loads((Path(run_directory) / "meta.json").read_text())
+    def path(self, filename):
+        return self.directory / filename
+
+    def write_json(self, name, data):
+        self.path(f"{name}.json").write_text(json.dumps(data, indent=2) + "\n")
+
+    def read_json(self, name):
+        return json.loads(self.path(f"{name}.json").read_text())
+
+    def append(self, table, *rows):
+        """Append dataclass rows to <table>.csv, writing the header (the dataclass fields) when the file is new."""
+        if not rows:
+            return
+        path = self.path(f"{table}.csv")
+        is_new = not path.exists()
+        with path.open("a", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=list(asdict(rows[0])))
+            if is_new:
+                writer.writeheader()
+            writer.writerows(asdict(row) for row in rows)
+
+    def rows(self, table):
+        with self.path(f"{table}.csv").open() as file:
+            return list(csv.DictReader(file))

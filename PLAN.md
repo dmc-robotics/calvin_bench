@@ -5,7 +5,7 @@ _Last updated 2026-10-13._
 ## Status
 
 - **Current milestone: M0** (ODrive bring-up over USB). Needs the user at the bench.
-- File structure is scaffolded (firmware stubs compile). The CLI has `bench static-gain record` / `analyze` for experiment 2 (tested against a simulated ODrive only; it reads the OHAUS balance over USB, tested on the real balance). On the first real run, check in `scale.csv` that the balance settles before the averaged last second of each hold. The rest is a stub. Nothing has run on hardware yet.
+- File structure is scaffolded (firmware stubs compile). The CLI has `bench record static-gain` and `bench analyze` for experiment 2 (tested against a fake ODrive device and on the real balance; `uv run pytest` covers the driver's safety, the procedure end to end and the analysis). On the first real run, check in `scale.csv` that the balance settles before the averaged last second of each hold. The rest is a stub. Nothing has run on hardware yet.
 - Next code work: M1 (InstinctusCore `ODriveCan` + bench sketch text commands), once M0 is done.
 
 ## Goal
@@ -21,7 +21,7 @@ Each is a small slice you can see working on the bench.
 ### M0 — ODrive bring-up over USB (no code)
 - Wire one S1 + motor on the bench, battery powered, e-stop in reach.
 - odrivetool: calibrate, decide anticogging, set `torque_constant` (8.27/330), limits, CAN 1 Mbit/s, node ID (left 1, right 2), torque control + passthrough. Cyclic messages: encoder estimates, Iq and torques at 1 ms; bus voltage 10 ms; temperature, heartbeat, error 100 ms. Turn on the watchdog (~0.1 s; it's fed by torque commands). Make sure the torque-mode velocity limit can't clip tests.
-- Spin it in torque mode from odrivetool. Measure G with the lever arm on the scale (experiment 2, `bench static-gain record` / `analyze`) and do a rough friction check.
+- Spin it in torque mode from odrivetool. Measure G with the lever arm on the scale (experiment 2, `bench record static-gain`, then `bench analyze`) and do a rough friction check.
 - Save the config dump into `odrive/` — this is the frozen baseline.
 - **Done when:** motor spins in torque mode, config saved, first number for G.
 
@@ -37,8 +37,8 @@ Each is a small slice you can see working on the bench.
 - **Done when:** a torque step plays and streams a sensible CSV with µs timestamps.
 
 ### M3 — Python `bench` CLI (minimum)
-- `bench/`: serial link, waveform generators (step, staircase, chirp, PRBS, multi-sine), run folders (`runs/<timestamp>_<experiment>_<motor>/` with `meta.json` + `data.csv`), plotting. Conversion from ODrive units to SI / wheel side happens in one place on the host.
-- **Done when:** `bench run step --motor left --torque 0.1 --duration 2` creates a run folder and a plot.
+- `bench/`: the Teensy link (`hardware/link.py`), waveform generators (step, staircase, chirp, PRBS, multi-sine), one experiment package per waveform experiment (see Python layout). Conversion from ODrive units to SI / wheel side happens in one place on the host.
+- **Done when:** `bench record step --motor left --torque 0.1 --duration 2` creates a run folder and `bench analyze` plots it.
 
 ### M4 — Second motor + timing check
 - Second CAN Pal on CAN3; both motors in the sketch. Measure command→response latency, feedback age, loop jitter, velocity noise (experiments 6–7).
@@ -57,7 +57,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 
 **Needed for LQR**
 1. ODrive setup and frozen config (M0).
-2. Static torque gain: lever arm on the motor shaft, on a scale → k, then G = 4 × k. Both directions, ~5 torque levels each; fit a line per direction (slope = k, intercept ≈ cogging at the arm's angle, not friction). Tare before and after; keep stall holds short. `bench static-gain record` / `analyze`.
+2. Static torque gain: lever arm on the motor shaft, on a scale → k, then G = 4 × k. Both directions, ~5 torque levels each; fit a line per direction (slope = k, intercept ≈ cogging at the arm's angle, not friction). Tare before and after; keep stall holds short. `bench record static-gain`, then `bench analyze`.
 3. Steady-state friction: velocity sweep, both directions → b, τ_c, stiction.
 4. Constant-torque acceleration and coast-down → J.
 5. Chirp torque, wheel off the ground → J, b, τ_d, any belt resonance.
@@ -95,7 +95,8 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 | RL simulator | Undecided; leaning MuJoCo. Not needed until after LQR |
 | Equipment | Scale (OHAUS AX8201/E, 0.1 g, read over USB; interface in CLAUDE.md), bench PSU, battery, voltmeter, Mac, Teensy 4.1, 2× CAN Pal. Nothing else required; a logic analyzer or USB-CAN adapter only if debugging gets stubborn |
 | calvin_theory | Personal learning notes; not a dependency |
-| Run folders | `runs/<YYYY-MM-DD_HHMMSS>_<experiment>_<motor>/`. `meta.json` = conditions fixed at the start, written once; `data.csv` = every measurement (raw ODrive units), appended; `odrive_config.json` = config dump; `results.json` + `plot.png` from analysis. Experiment 2 uses `bench static-gain record` / `analyze` over the ODrive's USB, plus `scale.csv` (every balance reading); its CSV columns are in `instructions/02-static-torque-gain.md` |
+| Run folders | `runs/<YYYY-MM-DD_HHMMSS>_<experiment>_<motor>/`. `meta.json` = conditions fixed at the start, written once; `data.csv` = every measurement (raw ODrive units), appended; `odrive_config.json` = config dump; `results.json` + `plot.png` from analysis. Experiment 2 records over the ODrive's USB, plus `scale.csv` (every balance reading); its files are in `instructions/02-static-torque-gain.md` |
+| Python layout | Layers kept apart: `hardware/` drivers (the ODrive driver owns motor safety), `experiments/<name>/` packages (`data`, `procedure`, `analysis`, `report`), `runs.py` (run folders), `console.py` (prompts). Details in CLAUDE.md |
 | Motor sign | All bench data is in the **raw ODrive sign**, whether recorded over USB (experiment 2) or CAN (bench sketch, `direction` +1). Per-direction results (k₊/k₋, τ_c, stiction) are labeled in that sign. `bench export` applies each motor's mounting sign (positive = robot forward, determined physically) once, when writing `actuator.yaml` |
 | Torque units through analysis | `units.py` does exact conversions only (rev→rad, motor→wheel angle and speed by `BELT_RATIO`). Torques stay in commanded motor-side N·m through every analysis; the measured G from experiment 2 is applied once, in `bench export` |
 
@@ -108,6 +109,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 - **Two sketches + shared library:** the bench rig has no IMU/ToF/Jetson, so production code shouldn't need "missing sensor" modes; sharing the CAN/safety code means the bench measures the same path the balance loop uses.
 - **InstinctusCore lives in calvin_instinctus:** keeps all Calvin code together; the symlink makes both sketches build against the same files.
 - **Stream instead of record-then-dump:** two motors at 1 kHz fill Teensy RAM in ~6 s.
+- **Layered Python, one package per experiment:** experiment 2's first version mixed hardware, procedure, files, prompts and analysis in one module. Separating them puts motor safety in one tested place and gives experiments 3+ a shape to copy without a framework.
 - **Raw ODrive sign on the bench:** the right motor is mirrored, so a robot-forward flip would pair experiment 2's k₊ with experiments 3–5's negative direction. One sign everywhere on the bench, flipped once in export, keeps every run comparable.
 
 ## Housekeeping done (2026-10-01)

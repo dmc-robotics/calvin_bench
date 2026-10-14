@@ -14,7 +14,7 @@ So G ≈ 4, and the experiment tells you how far from 4.
 ## Configuration
 - **Bench fixture:** lever arm and scale
 - **Drivetrain:** **Motor only** Arm clamped to the motor shaft.
-- **Firmware:** Teensy isn't needed. Driven by `bench static-gain record` over the ODrive's USB.
+- **Firmware:** Teensy isn't needed. Driven by `bench record static-gain` over the ODrive's USB. **Unplug CAN from the ODrive (or power the Teensy off):** a CAN host can override the torque command or keep feeding the watchdog.
 - **Connections:** ODrive USB → Mac; the balance's USB Device port (the square USB-B socket) → Mac
 - **Power:** Battery
 
@@ -31,10 +31,10 @@ So G ≈ 4, and the experiment tells you how far from 4.
 4. With the motor idle, the scale reads the **tare**, the arm's resting weight. The script reads it; don't zero the balance with the arm on it, or its auto-zero tracking can creep the near-zero readings.
 
 ## Procedure
-Recorded with `bench static-gain record`. It talks to the ODrive over USB, so close `odrivetool` first.
+Recorded with `bench record static-gain`. It talks to the ODrive over USB, so close `odrivetool` first.
 
 ```sh
-bench static-gain record --motor left --arm-length 0.200
+bench record static-gain --motor left --arm-length 0.200
 ```
 
 It reads the balance on `/dev/cu.usbserial-DN04KNBY`, named after the balance's own USB chip, so it doesn't change; `--scale <port>` overrides it. Set the balance to grams. With `--no-scale`, the script asks you to type each reading instead.
@@ -58,15 +58,15 @@ While it runs:
 6. Optional: `--from-above` adds a second pass per direction that approaches each level from 0.05 N·m higher. The difference shows static friction (hysteresis). The top level then reaches 0.30 N·m, so it also needs `--max-torque 0.3`.
 
 Each run goes to `runs/<timestamp>_static-gain_<motor>/`:
-- `meta.json`: settings fixed at the start (arm length, levels, ODrive serial and firmware, node ID, configured `torque_constant`, velocity cap, the balance's port, ID and firmware or `manual`). Written once.
+- `meta.json`: written once at the start. `experiment` and `motor`; `settings` (every setting of the recording: arm length, levels, hold and averaging times, scale port…); `odrive` (serial, firmware, node ID, configured `torque_constant_NmA`); `velocity_cap_rev_per_s`; `scale` (the balance's port, ID and firmware, or `manual`).
 - `odrive_config.json`: the full ODrive config, as `odrivetool backup-config` would save it.
 - `data.csv`: every measurement, one row each, appended as it's taken. Columns `direction, approach, torque_command_Nm, scale_g, scale_std_g, scale_samples, scale_stable_samples, iq_setpoint_A, iq_measured_A, vbus_V, fet_temperature_C, motor_temperature_C`. `approach` is `tare` (motor idle, command 0, the Iq and vbus columns empty), `below` or `above`. `scale_g` is the mean over the last second; the spread and counts are empty for typed readings.
-- `scale.csv` (not with `--no-scale`): every balance reading, `direction, approach, torque_command_Nm, time_s, scale_g, stable`. `time_s` counts from when the torque was applied (negative during a from-above overshoot). Use it to check the balance settles before the averaged last second.
+- `scale.csv` (not with `--no-scale`): every balance reading, `direction, approach, torque_command_Nm, time_s, scale_g, stable`. `time_s` counts from when the torque was applied (negative during a from-above overshoot); `stable` is `True` or `False`. Use it to check the balance settles before the averaged last second.
 
-Without the script the same procedure works by hand in odrivetool: type the rows into `data.csv` and write `meta.json` with at least `arm_length_m` and `torque_constant_NmA`.
+Without the script the same procedure works by hand in odrivetool: type the rows into `data.csv` and write `meta.json` with at least `{"experiment": "static-gain", "settings": {"arm_length_m": …}, "odrive": {"torque_constant_NmA": …}}`.
 
 ## Analysis
-`bench static-gain analyze runs/<run_directory>` does all of this. It prints a report and writes `results.json` and `plot.png` (measured vs commanded torque with the fits, and the residuals) into the run folder.
+`bench analyze runs/<run_directory>` does all of this. It prints a report and writes `results.json` and `plot.png` (measured vs commanded torque with the fits, and the residuals) into the run folder.
 
 1. **Tare:** average the `tare` readings from before and after. If they differ by more than a gram or two, the scale drifted; redo that direction.
 2. **Measured torque at each level:** `F = (reading − tare) / 1000 × 9.81` N, then `τ = F × L` N·m (motor-side). Give `τ` the sign of the command, so the negative direction gives negative values.
