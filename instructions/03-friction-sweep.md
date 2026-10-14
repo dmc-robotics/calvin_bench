@@ -28,7 +28,7 @@ In **velocity control**, the ODrive holds a constant speed. At constant speed th
 Same staircase of speeds, 3 s per step, logged at 1 kHz; average the last 2 s of each step. Then a slow torque ramp from zero in each direction to find the breakaway torque (stiction): the torque at which the wheel first starts to move.
 
 ## Analysis
-- Friction torque τ_f(ω) = 0.0251 × Iq (motor-side; × G for wheel-side).
+- Friction torque τ_f(ω) = 0.0251 × Iq: motor-side, in commanded N·m. Don't apply G here; `bench export` applies it once (PLAN, Torque units through analysis).
 - Fit τ_f = τ_c × sign(ω) + b × ω separately for each direction. Look for extra friction at low speed (the Stribeck effect), which shows up as a bump near zero speed.
 
 ## Pitfalls

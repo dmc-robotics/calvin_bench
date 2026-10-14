@@ -26,8 +26,8 @@ For each torque level (e.g. 0.03, 0.06, 0.10 N·m motor-side), in each direction
 - Record at 1 kHz: command, velocity, Iq, bus voltage.
 
 ## Analysis
-- Convert to wheel side: ω_wheel = rev/s × 2π / 4 and τ_wheel = G × τ_command.
-- In the acceleration phase, fit J from τ_wheel − τ_friction(ω) = J × dω/dt. Fit to the speed curve instead of differentiating noisy data, e.g. simulate the model and fit J by least squares.
+- Convert speed to the wheel side: ω_wheel = rev/s × 2π / 4. Torques stay motor-side in commanded N·m (τ_command, and τ_friction from experiment 3); `bench export` applies G once (PLAN, Torque units through analysis).
+- In the acceleration phase, fit J from τ_command − τ_friction(ω) = J × dω/dt. This J is per commanded N·m; export multiplies it by G. Fit to the speed curve instead of differentiating noisy data, e.g. simulate the model and fit J by least squares.
 - In the coast-down, −τ_friction(ω) = J × dω/dt, a check on both J and the friction model.
 - **Wheel on vs off:** report J without the wheel (see experiment 13), or subtract the CAD wheel inertia. Record which.
 

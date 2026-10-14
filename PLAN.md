@@ -26,7 +26,7 @@ Each is a small slice you can see working on the bench.
 - **Done when:** motor spins in torque mode, config saved, first number for G.
 
 ### M1 — InstinctusCore `ODriveCan`, one motor
-- `InstinctusCore/src/ODriveCan.*`: FlexCAN_T4 wrapper. Commands (axis state, controller mode, torque, clear errors, estop). Feedback parsed in the CAN receive interrupt into `MotorFeedback`, each message stamped with `micros()` on arrival. A `direction` (+1/−1) per motor so positive = robot forward (determine physically).
+- `InstinctusCore/src/ODriveCan.*`: FlexCAN_T4 wrapper. Commands (axis state, controller mode, torque, clear errors, estop). Feedback parsed in the CAN receive interrupt into `MotorFeedback`, each message stamped with `micros()` on arrival. A `direction` (+1/−1) per motor so positive = robot forward (determine physically). The bench sketch uses +1 for both: bench data stays in the raw ODrive sign (see Motor sign).
 - Bench sketch: text commands over USB serial (`enable`, `idle`, `torque 0.05`, `status`).
 - **Done when:** the motor spins on CAN commands typed in a serial monitor, `status` shows live position/velocity/Iq/Vbus, and the ODrive watchdog idles the motor when commands stop.
 
@@ -96,6 +96,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 | Equipment | Scale (OHAUS AX8201/E, 0.1 g, read over USB; interface in CLAUDE.md), bench PSU, battery, voltmeter, Mac, Teensy 4.1, 2× CAN Pal. Nothing else required; a logic analyzer or USB-CAN adapter only if debugging gets stubborn |
 | calvin_theory | Personal learning notes; not a dependency |
 | Run folders | `runs/<YYYY-MM-DD_HHMMSS>_<experiment>_<motor>/`. `meta.json` = conditions fixed at the start, written once; `data.csv` = every measurement (raw ODrive units), appended; `odrive_config.json` = config dump; `results.json` + `plot.png` from analysis. Experiment 2 uses `bench static-gain record` / `analyze` over the ODrive's USB, plus `scale.csv` (every balance reading); its CSV columns are in `instructions/02-static-torque-gain.md` |
+| Motor sign | All bench data is in the **raw ODrive sign**, whether recorded over USB (experiment 2) or CAN (bench sketch, `direction` +1). Per-direction results (k₊/k₋, τ_c, stiction) are labeled in that sign. `bench export` applies each motor's mounting sign (positive = robot forward, determined physically) once, when writing `actuator.yaml` |
 | Torque units through analysis | `units.py` does exact conversions only (rev→rad, motor→wheel angle and speed by `BELT_RATIO`). Torques stay in commanded motor-side N·m through every analysis; the measured G from experiment 2 is applied once, in `bench export` |
 
 ## Decision log (why)
@@ -107,6 +108,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 - **Two sketches + shared library:** the bench rig has no IMU/ToF/Jetson, so production code shouldn't need "missing sensor" modes; sharing the CAN/safety code means the bench measures the same path the balance loop uses.
 - **InstinctusCore lives in calvin_instinctus:** keeps all Calvin code together; the symlink makes both sketches build against the same files.
 - **Stream instead of record-then-dump:** two motors at 1 kHz fill Teensy RAM in ~6 s.
+- **Raw ODrive sign on the bench:** the right motor is mirrored, so a robot-forward flip would pair experiment 2's k₊ with experiments 3–5's negative direction. One sign everywhere on the bench, flipped once in export, keeps every run comparable.
 
 ## Housekeeping done (2026-10-01)
 
