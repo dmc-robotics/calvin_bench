@@ -59,12 +59,12 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] Add `OhausAdventurer.connect(port)` as a classmethod context manager, matching `ODriveUsb.connect`. Today `OhausAdventurer.__init__` does I/O (`ohaus_adventurer.py:37–62`, `procedure.py:34–38`).
 
 ### 7. M6 + Low: docs and tidy-ups
-- [ ] `README.md:5` says Instinctus is "This Repo". Fix it to describe calvin_bench.
-- [ ] Rewrite the `units.py` docstring (`:1–5`) to describe what's there now, not the rev→rad functions that don't exist yet.
-- [ ] `instructions/02` Procedure: the refusal list leaves out the `vel_gain`, `torque_constant` and `current_soft_max` checks. Describe what the person does, and say the script lists every problem.
-- [ ] Trim module docstrings that repeat the layout (`static_gain/__init__.py:4–7`, `procedure.py:3–4`, `experiments/__init__.py`). The layout belongs in CLAUDE.md.
-- [ ] H3 wording: in `experiments/__init__.py`, CLAUDE.md ("same shape") and PLAN's Python layout row, make the **entry points** the contract (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`) and the four-file split optional.
-- [ ] Import `TORQUE_CONSTANT_NMA` from `tests/fakes.py` instead of repeating it in `test_static_gain_analysis.py:10`.
+- [x] `README.md:5` says Instinctus is "This Repo". Fix it to describe calvin_bench.
+- [x] Rewrite the `units.py` docstring (`:1–5`) to describe what's there now, not the rev→rad functions that don't exist yet.
+- [x] `instructions/02` Procedure: the refusal list leaves out the `vel_gain`, `torque_constant` and `current_soft_max` checks. Describe what the person does, and say the script lists every problem.
+- [x] Trim module docstrings that repeat the layout (`static_gain/__init__.py:4–7`, `procedure.py:3–4`, `experiments/__init__.py`). The layout belongs in CLAUDE.md.
+- [x] H3 wording: in `experiments/__init__.py`, CLAUDE.md ("same shape") and PLAN's Python layout row, make the **entry points** the contract (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`) and the four-file split optional.
+- [x] Import `TORQUE_CONSTANT_NMA` from `tests/fakes.py` instead of repeating it in `test_static_gain_analysis.py:10`.
 - [x] Rename the procedure's `odrive` variable to `drive` (done in step 2), so it doesn't share a name with the `odrive` library used in `odrive_usb.py`.
 - [ ] _(If decided)_ Delete the Python stubs and `scipy`.
 

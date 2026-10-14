@@ -36,9 +36,15 @@ calvin_bench/
 =======
   - `bench/hardware/`: drivers, each module and class named for its hardware ("scale" stays the generic word and variable name). `odrive_usb.py` owns motor safety (idle on every exit, watchdog fed, motion abort, config checks); `ohaus_adventurer.py` is the balance; `link.py` the Teensy (M3).
 >>>>>>> new
+<<<<<<< old
   - `bench/experiments/<name>/`: one package per experiment, entry points listed in `bench/experiments/__init__.py`. Inside: `data.py` (Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns), `procedure.py` (the steps; no safety logic of its own), `analysis.py` (pure: rows in, results with warnings out), `report.py` (printing, plots).
   - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
 - New experiment: add a package with the same shape and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
+=======
+  - `bench/experiments/<name>/`: one package per experiment. Its contract is the entry points the CLI calls (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`; see `bench/experiments/__init__.py`); how it splits into files is up to it. Static-gain uses `data.py` (Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns), `procedure.py` (the steps; no safety logic of its own), `analysis.py` (pure: rows in, results with warnings out), `report.py` (printing, plots).
+  - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
+- New experiment: add a package with those entry points and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
+>>>>>>> new
 
 ## Scale (experiment 2)
 

@@ -6,9 +6,9 @@ from bench.errors import BenchError
 from bench.experiments.static_gain import analysis
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DIRECTIONS, Measurement
 from bench.runs import Run
+from fakes import TORQUE_CONSTANT_NMA
 
 ARM_LENGTH_M = 0.2
-TORQUE_CONSTANT_NMA = 8.27 / 330
 TARE_G = 50.0
 K = {"positive": 0.97, "negative": 1.01}
 OFFSET_NM = {"positive": 0.004, "negative": -0.003}

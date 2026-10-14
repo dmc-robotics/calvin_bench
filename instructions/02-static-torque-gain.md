@@ -39,15 +39,22 @@ bench record static-gain --motor left --arm-length 0.200
 
 It reads the balance on `/dev/cu.usbserial-DN04KNBY`, named after the balance's own USB chip, so it doesn't change; `--scale <port>` overrides it. Set the balance to grams. With `--no-scale`, the script asks you to type each reading instead.
 
+Before connecting, it refuses bad settings, for example an arm length of 1 m or more (millimeters typed as meters), fewer than 3 distinct levels, or levels above `--max-torque`.
+
 Before anything moves, the script checks the ODrive and refuses to start if:
 - the node ID doesn't match `--motor` (left 1, right 2), so it can't drive the wrong ODrive;
 - it isn't in torque control + passthrough, or `enable_torque_mode_vel_limit` is off;
-- the watchdog is off or its timeout isn't 0.05–0.2 s (experiment 1 turns it on).
+- `vel_gain` isn't positive, or is so low that the velocity cap needed to hold the top level without clipping would be above 5 rev/s;
+- `torque_constant` isn't positive, or the top level needs more current than `current_soft_max`;
+- the watchdog is off or its timeout isn't 0.05–0.2 s.
+
+It lists every problem at once. Fix them in odrivetool (experiment 1 sets all of these), save the config, and rerun.
 
 While it runs:
 - `vel_limit` is lowered to a few rev/s (enough headroom not to clip the torque at stall) and restored at the end. It isn't saved.
 - The watchdog is fed during each hold. The motor is idle whenever the script waits for you. Ctrl-C idles it.
 - If the shaft moves during a hold (the arm slipped or missed the scale), the motor idles and the run stops.
+- If reading the balance ever holds up the loop for more than 0.05 s, the motor idles and the run stops: the watchdog and the slip check can't wait longer than that.
 - Holds are at least 5 s apart, and it waits for you to let things cool if the FET passes 80 °C or the motor passes 60 °C. The motor temperature reads n/a if its thermistor isn't enabled on the ODrive.
 
 1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 4).

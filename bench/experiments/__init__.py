@@ -1,10 +1,9 @@
-"""One package per experiment, each with the same entry points, which the CLI calls:
+"""One package per experiment. The CLI calls only these entry points, so they are the whole contract:
 
   NAME, DESCRIPTION
   add_arguments(parser)   its `bench record <NAME>` options
   record(arguments)       record a run into runs/
   analyze(run, show)      fit a run folder, write results.json, print the report and plot
 
-Inside, by convention: data.py (settings and row types), procedure.py (recording), analysis.py (pure fitting)
-and report.py (printing and plotting). Hardware lives in bench.hardware, run folders in bench.runs.
+How a package splits into files is up to it; static_gain's split is one way, not a template.
 """

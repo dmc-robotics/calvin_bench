@@ -1,8 +1,4 @@
-"""Recording experiment 2, step by step as in instructions/02-static-torque-gain.md (Procedure).
-
-The ODrive driver owns the motor's safety; this module decides what to hold and when, reads the balance during
-each hold (or asks for typed readings without one) and writes the rows through Run.
-"""
+"""Recording experiment 2, step by step as in instructions/02-static-torque-gain.md (Procedure)."""
 import math
 import statistics
 import time

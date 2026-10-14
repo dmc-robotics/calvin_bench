@@ -1,10 +1,6 @@
 """Experiment 2: static torque gain (instructions/02-static-torque-gain.md).
 
 A lever arm on the motor shaft pushes on the OHAUS balance while the ODrive holds torque levels; the fit gives k, then G = 4 × k.
-  data.py       Settings and the rows a run holds
-  procedure.py  recording: the guided steps
-  analysis.py   fitting (pure: rows in, results out)
-  report.py     the printed report and plot
 """
 from dataclasses import asdict
 
