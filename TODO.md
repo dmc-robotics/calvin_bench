@@ -136,5 +136,5 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - The `finally`/context-manager safety in `hold()` and `connect()`. The tests that use the real driver against `FakeDevice`.
 - Pure `analysis.fit`, `runs.py` as the only file I/O, `console.py` as the only place that prompts.
 - The experiment registry in `cli.py`, the unit-suffixed names, and the raw ODrive sign convention.
-- `Signals`/`Weight` as `NamedTuple`s (`Signals` relies on being a tuple for `zip(*samples)`).
+- `Signals`/`Weight`/`Tick` as `NamedTuple`s (`ODriveSample` is built from `*tick[2:]`).
 - The tests' monkeypatching of module globals. It's acceptable at this size; pass the instruments in instead if it spreads.
