@@ -28,7 +28,7 @@ class Reading:
 
 def record(settings):
     print("Connecting over USB...")
-    scale_connection = OhausAdventurer.connect(settings.scale_port) if settings.scale_port else nullcontext()
+    scale_connection = OhausAdventurer.connect(settings.scale_port, unit="g") if settings.scale_port else nullcontext()
     with scale_connection as scale, ODriveUsb.connect(settings.motor, settings.highest_torque_Nm) as drive:
         if scale:
             print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
@@ -80,7 +80,7 @@ class Session:
         if self.scale:
             print(f"Motor idle. Reading the {label.lower()} for {self.settings.hold_s} s...")
             samples = [
-                ScaleSample(hold, direction, "tare", 0.0, round(time_s, 3), weight.grams, weight.stable)
+                ScaleSample(hold, direction, "tare", 0.0, round(time_s, 3), weight.value, weight.stable)
                 for time_s, weight in self.scale.sample(self.settings.hold_s)
             ]
         self.run.append("scale", *samples)
@@ -132,7 +132,7 @@ class Session:
         window_start = started_at + settings.hold_s - settings.sample_s
         signals = Signals(*map(statistics.fmean, zip(*(signals for when, signals in ticks if when >= window_start))))
         samples = [
-            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.grams, weight.stable)
+            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable)
             for when, weight in weights
         ]
         return signals, samples

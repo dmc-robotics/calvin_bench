@@ -1,4 +1,4 @@
-"""Recording end to end: the real procedure and ODriveUsb driver against a fake ODrive device and balance."""
+"""Recording end to end: the real procedure, ODriveUsb and OhausAdventurer against a fake ODrive device and balance."""
 import builtins
 
 import pytest
@@ -8,7 +8,9 @@ from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Measurement, ScaleSample, Settings
 from bench.runs import Run
-from fakes import FakeOhausAdventurer
+from bench.hardware import ohaus_adventurer
+from bench.hardware.ohaus_adventurer import OhausError
+from fakes import FakeBalance, lever_load
 
 ARM_LENGTH_M = 0.2
 QUICK = {"hold_s": 0.06, "sample_s": 0.04, "rest_s": 0.0, "overshoot_s": 0.02, "minimum_scale_readings": 1}
@@ -29,10 +31,14 @@ class Bench:
         return str(self.readings.pop(0))
 
 
+SCALE_PORT = "/dev/cu.fake"
+
+
 @pytest.fixture
 def scale(device, monkeypatch):
-    fake = FakeOhausAdventurer(device.axis0, ARM_LENGTH_M)
-    monkeypatch.setattr(procedure.OhausAdventurer, "connect", lambda port: fake)
+    """A fake balance under the arm, weighing the torque the fake motor holds."""
+    fake = FakeBalance(lever_load(device.axis0, ARM_LENGTH_M))
+    monkeypatch.setattr(ohaus_adventurer.serial, "Serial", lambda *arguments, **options: fake)
     return fake
 
 
@@ -43,7 +49,7 @@ def only_run(runs_directory):
 
 def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
-    procedure.record(Settings("left", ARM_LENGTH_M, scale_port=scale.port, **QUICK))
+    procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
 
     run = only_run(runs_directory)
     meta = run.meta
@@ -51,7 +57,7 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["settings"]["arm_length_m"] == ARM_LENGTH_M
     assert meta["odrive"]["node_id"] == 1
     assert meta["velocity_cap_rev_per_s"] == pytest.approx(1.5 * max(DEFAULT_LEVELS_NM) / device.axis0.controller.config.vel_gain)
-    assert meta["scale"]["balance_id"] == "FAKE"
+    assert meta["scale"]["balance_id"] == "B000000001"
     assert run.read_json("odrive_config") == {"fake": True}
     rows = run.rows("data", Measurement)
     assert len(rows) == 2 * (2 + len(DEFAULT_LEVELS_NM))
@@ -73,7 +79,7 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
 
 def test_from_above_overshoots_first(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
-    procedure.record(Settings("left", ARM_LENGTH_M, levels_Nm=(0.05, 0.1, 0.15), from_above=True, scale_port=scale.port, **QUICK))
+    procedure.record(Settings("left", ARM_LENGTH_M, levels_Nm=(0.05, 0.1, 0.15), from_above=True, scale_port=SCALE_PORT, **QUICK))
 
     assert max(device.axis0.torque_log) == pytest.approx(0.15 + 0.05)
     assert min(device.axis0.torque_log) == pytest.approx(-(0.15 + 0.05))
@@ -109,16 +115,27 @@ def test_shaft_motion_stops_the_run_with_the_motor_idle(device, scale, runs_dire
     monkeypatch.setattr(builtins, "input", Bench())
     device.axis0.slip_after_reads = 3
     with pytest.raises(BenchError, match="shaft moved"):
-        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=scale.port, **QUICK))
+        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
     assert device.axis0.is_idle
     assert device.axis0.controller.config.vel_limit == 10.0
+
+
+def test_the_balance_going_to_standby_mid_hold_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
+    monkeypatch.setattr(builtins, "input", Bench())
+    scale.standby_after_weights = 8  # partway through the holds, after the tare
+    with pytest.raises(OhausError, match="standby"):
+        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
+    assert device.axis0.arm_count >= 1
+    assert device.axis0.is_idle
+    assert device.axis0.controller.config.vel_limit == 10.0
+    assert scale.closed
 
 
 def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, scale, runs_directory, monkeypatch):
     bench = Bench(confirm="n")
     monkeypatch.setattr(builtins, "input", bench)
     with pytest.raises(BenchError, match="Aborted"):
-        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=scale.port, **QUICK))
+        procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
     assert "e-stop" in bench.prompts[0]
     assert device.axis0.arm_count == 0
     assert not runs_directory.exists()
@@ -127,5 +144,5 @@ def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, sca
 def test_the_wrong_odrive_moves_nothing(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
     with pytest.raises(BenchError, match="Wrong ODrive"):
-        procedure.record(Settings("right", ARM_LENGTH_M, scale_port=scale.port, **QUICK))
+        procedure.record(Settings("right", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
     assert device.axis0.arm_count == 0

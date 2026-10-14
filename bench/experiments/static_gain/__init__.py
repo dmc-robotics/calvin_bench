@@ -6,9 +6,11 @@ from dataclasses import asdict
 
 from bench.experiments.static_gain import analysis, procedure, report
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Measurement, Settings
-from bench.hardware.ohaus_adventurer import DEFAULT_PORT
 from bench.motors import NODE_IDS
 
+# Safe to hard-code: macOS names the port after the serial number of the FTDI chip inside the balance,
+# so it stays the same across replugs, reboots and USB sockets.
+DEFAULT_SCALE_PORT = "/dev/cu.usbserial-DN04KNBY"
 DESCRIPTION = "experiment 2: static torque gain (lever arm + scale), over the ODrive's USB"
 
 
@@ -21,7 +23,7 @@ def add_arguments(parser):
     )
     parser.add_argument("--from-above", action="store_true", help="add a pass approaching each level from above (stiction)")
     parser.add_argument("--max-torque", type=float, default=DEFAULT_MAX_TORQUE_NM, help="refuse levels above this, N·m (default: %(default)s)")
-    parser.add_argument("--scale", metavar="PORT", default=DEFAULT_PORT, help="the OHAUS balance's port (default: %(default)s)")
+    parser.add_argument("--scale", metavar="PORT", default=DEFAULT_SCALE_PORT, help="the OHAUS balance's port (default: %(default)s)")
     parser.add_argument("--no-scale", action="store_true", help="type the scale readings instead")
 
 

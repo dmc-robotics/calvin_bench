@@ -25,10 +25,11 @@ So G ≈ 4, and the experiment tells you how far from 4.
 - Ruler or calipers.
 
 ## Setup
-1. Clamp the arm so it sticks out horizontally. It must not slip.
-2. Put the scale under the arm's tip so the arm rests on it when level. Use a narrow contact point (a bolt head or an edge) so the length is well defined.
-3. Measure `L`, from the shaft (or axle) center to the contact point, in meters.
-4. With the motor idle, the scale reads the **tare**, the arm's resting weight. The script reads it; don't zero the balance with the arm on it, or its auto-zero tracking can creep the near-zero readings.
+1. **Balance:** switch it on at least an hour ahead (the manual's warm-up for best accuracy) and set it to grams. On its touchscreen: Auto Tare, Auto Off and Auto Standby off (a balance that tares itself or sleeps mid-run spoils or stops the run); Communication > Print Settings > Print Output: Output Format OHAUS, Numeric Value Only off. The script turns any auto-print off when it connects.
+2. Clamp the arm so it sticks out horizontally. It must not slip.
+3. Put the scale under the arm's tip so the arm rests on it when level. Use a narrow contact point (a bolt head or an edge) so the length is well defined.
+4. Measure `L`, from the shaft (or axle) center to the contact point, in meters.
+5. With the motor idle, the scale reads the **tare**, the arm's resting weight. The script reads it; don't zero the balance with the arm on it, or its auto-zero tracking can creep the near-zero readings.
 
 ## Procedure
 Recorded with `bench record static-gain`. It talks to the ODrive over USB, so close `odrivetool` first.
@@ -55,11 +56,12 @@ While it runs:
 - The watchdog is fed during each hold. The motor is idle whenever the script waits for you. Ctrl-C idles it.
 - If the shaft moves during a hold (the arm slipped or missed the scale), the motor idles and the run stops.
 - If reading the balance ever holds up the loop for more than 0.05 s, the motor idles and the run stops: the watchdog and the slip check can't wait longer than that.
+- If the balance refuses to answer (standby, calibrating) or switches away from grams, the motor idles and the run stops with the reason.
 - Holds are at least 5 s apart, and it waits for you to let things cool if the FET passes 80 °C or the motor passes 60 °C. The motor temperature reads n/a if its thermistor isn't enabled on the ODrive.
 
-1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 4).
+1. Confirm the setup and that the scale is placed for the positive direction. It reads the tare (Setup step 5).
 2. It steps through the levels: 0.05, 0.10, 0.15, 0.20, 0.25 N·m motor-side by default (`--levels` changes them; at least 3). That's ≈ 2–10 A; with a 0.2 m arm it's roughly 25–130 g on the scale, so a 1 g scale gives a few % at the low end and better above.
-3. At each level it arms the motor, holds the torque for 2.5 s, then idles. It polls the balance through the hold (~8 readings/s) and averages the last second. Unstable readings count too, since the motor may keep the balance from ever settling. It prints the mean ± standard deviation and how many readings were stable. With `--no-scale`, watch the scale and type the reading at the end of the hold; `r` repeats the level.
+3. At each level it arms the motor, holds the torque for 3 s, then idles. It polls the balance through the hold (~8 readings/s) and averages the last second, which starts 0.5 s after the balance's typical 1.5 s settling time. Unstable readings count too, since the motor may keep the balance from ever settling. It prints the mean ± standard deviation and how many readings were stable. With `--no-scale`, watch the scale and type the reading at the end of the hold; `r` repeats the level.
 4. After the last level it reads the tare again.
 5. **Other direction:** move the scale to the other side of the axle (or flip the arm), confirm, and repeat from the tare.
 6. Optional: `--from-above` adds a second pass per direction that approaches each level from 0.05 N·m higher. The difference shows static friction (hysteresis). The top level then reaches 0.30 N·m, so it also needs `--max-torque 0.3`.

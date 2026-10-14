@@ -7,7 +7,7 @@ _Review of 2026-10-13. Item IDs (H1, M3, …) are for reference in questions. Do
 ## Decisions for you
 
 - [x] **Hold index column** (M3): add a `hold` column to `data.csv` and `scale.csv`, so a repeated hold's scale samples can be told apart and linked to their measurement row. This changes the CSV format.
-- [ ] **Delete Python stubs** (Low): remove `bench/waveforms.py`, `bench/hardware/link.py` and the unused `scipy` dependency until M3. PLAN already describes them.
+- [x] **Delete Python stubs** (Low): remove `bench/waveforms.py`, `bench/hardware/link.py` and the unused `scipy` dependency until M3. Decided 2026-10-14: keep them. They mark where M3's code goes, and M3 will likely need `scipy`.
 - [x] **Split `hold()`** (H2): the driver keeps the safety (`armed()` context + `apply(torque_Nm, seconds, during)`); the profile, overshoot, sampling window and averaging move to static-gain's procedure. Done in step 2.
 - [x] **Typed run reader** (M1): approve `Run.rows(table, RowType)` returning dataclasses. For the 1 kHz data at M3, choosing between numpy structured arrays and pandas is a separate decision.
 
@@ -66,11 +66,16 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] H3 wording: in `experiments/__init__.py`, CLAUDE.md ("same shape") and PLAN's Python layout row, make the **entry points** the contract (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`) and the four-file split optional.
 - [x] Import `TORQUE_CONSTANT_NMA` from `tests/fakes.py` instead of repeating it in `test_static_gain_analysis.py:10`.
 - [x] Rename the procedure's `odrive` variable to `drive` (done in step 2), so it doesn't share a name with the `odrive` library used in `odrive_usb.py`.
-- [ ] _(If decided)_ Delete the Python stubs and `scipy`.
+- [x] ~~Delete the Python stubs and `scipy`.~~ Kept (see Decisions).
 
 ## After the steps
 
-- [ ] Flesh out `OhausAdventurer` (`bench/hardware/ohaus_adventurer.py`). Renamed from `Scale` (`scale.py`) on 2026-10-14: hardware classes and modules are named for the hardware; "scale" stays the generic word and variable name. The untracked `docs/` folder belongs to this work.
+- [x] Flesh out `OhausAdventurer` (`bench/hardware/ohaus_adventurer.py`). Renamed from `Scale` (`scale.py`) on 2026-10-14: hardware classes and modules are named for the hardware; "scale" stays the generic word and variable name. The untracked `docs/` folder (the AX manual and datasheet) belongs to this work.
+  - [x] Probe the real balance (no motor) for the replies the manual leaves out: `ES`/`EL`, `NET`, `OK!`, tare, standby, streaming, `PFMT`, calibration.
+  - [x] Rewrite the driver as a self-contained file (pyserial only, `OhausError`) covering the manual's command table (Table 9-6), parsing the §7.2 output format including `NET` and `?`.
+  - [x] `FakeBalance` serial stand-in in `tests/fakes.py`; driver tests from the probe's verbatim replies; procedure tests run the real driver.
+  - [x] Experiment 2: `connect(port, unit="g")`, `DEFAULT_PORT` moves to `static_gain`, `hold_s` 2.5 → 3.0 s, the CLI catches `OhausError`, balance settings in `instructions/02`.
+  - [x] Docs: CLAUDE.md Scale section, PLAN.md decision.
 
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)
 

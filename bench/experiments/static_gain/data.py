@@ -23,7 +23,7 @@ class Settings:
     scale_port: str | None = None  # None: the readings are typed in
     overshoot_Nm: float = 0.05  # how far above a level the from-above pass starts
     overshoot_s: float = 0.5
-    hold_s: float = 2.5
+    hold_s: float = 3.0  # the averaged last sample_s starts 0.5 s after the balance's typical 1.5 s settling
     sample_s: float = 1.0  # averaged at the end of each hold and tare
     rest_s: float = 5.0  # minimum time idle between holds
     minimum_scale_readings: int = 4  # in the averaged window; ~8 normally

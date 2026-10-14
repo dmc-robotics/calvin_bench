@@ -1,11 +1,11 @@
-"""Hardware stand-ins: a fake ODrive device for the real ODriveUsb driver to talk to, and a fake balance that weighs
-the torque the fake motor is holding."""
+"""Hardware stand-ins for the real drivers to talk to: a fake ODrive device for ODriveUsb, and a fake balance's serial
+port for OhausAdventurer that can weigh the torque the fake motor is holding."""
+import re
 from types import SimpleNamespace
 
 from odrive.enums import AxisState, ControlMode, InputMode
 
 from bench import units
-from bench.hardware.ohaus_adventurer import Weight
 
 TORQUE_CONSTANT_NMA = 8.27 / 330
 
@@ -30,7 +30,7 @@ class FakeController:
 
 
 class FakeFoc:
-    """Iq tracks the torque command exactly; the motor then makes `k` times the commanded torque (FakeOhausAdventurer weighs that)."""
+    """Iq tracks the torque command exactly; the motor then makes `k` times the commanded torque (lever_load weighs that)."""
 
     def __init__(self, axis):
         self._axis = axis
@@ -106,37 +106,144 @@ class FakeDevice:
         self.vbus_voltage = 15.8
 
 
-class FakeOhausAdventurer:
-    """Reads the tare plus whatever the fake motor pushes onto it through an arm of `arm_length_m`.
-    Stands in for what `OhausAdventurer.connect()` yields, so it is its own context manager."""
+class FakeBalance:
+    """A serial port with an OHAUS Adventurer behind it, replying as the AX8201/E did when probed (firmware Sr 1.06).
 
-    port = "/dev/cu.fake"
-    balance_id = "FAKE"
-    firmware = "Sr 0"
+    `load_g` is the gross load on the pan: a number, or a function for one that changes. A reply arrives `lag` reads
+    of `in_waiting` after its command, so a test can catch one in flight; `reset_input_buffer` only drops what has arrived.
+    """
 
-    def __init__(self, axis, arm_length_m, tare_g=50.0):
-        self._axis = axis
-        self._arm_length_m = arm_length_m
-        self.tare_g = tare_g
+    def __init__(self, load_g=0.0, unit="g", lag=0):
+        self.load_g = load_g
+        self.unit = unit
+        self.lag = lag
+        self.stable = True
+        self.standby_after_weights = None  # goes into standby after this many weight replies
+        self.silent = False
+        self.standby = False
+        self.transition_commands = 0  # after OFF, commands still answered as awake; after ON, ignored
+        self.calibrating = False
+        self.acknowledge = False
+        self.continuous = False
+        self.zero_g = 0.0
+        self.tare_g = 0.0
+        self.headers = {line: "" for line in range(1, 6)}
+        self.piece_weight_g = 2.06
+        self.reference_weight_g = 1000.0
+        self.received = []
+        self.closed = False
+        self._weights_sent = 0
+        self._transition_left = 0
+        self._arrived = b""
+        self._in_flight = []  # [reads left, bytes]
 
-    def __enter__(self):
-        return self
+    def gross_g(self):
+        return (self.load_g() if callable(self.load_g) else self.load_g) - self.zero_g
 
-    def __exit__(self, *exception):
+    def weight_line(self):
+        net = self.gross_g() - self.tare_g
+        return f"{net:11.1f} {self.unit:>5}{'' if self.stable else ' ?'}{' N' if self.tare_g else ''}"
+
+    @property
+    def in_waiting(self):
+        if self.continuous:
+            self._reply(self.weight_line())
+        for reply in self._in_flight:
+            reply[0] -= 1
+        self._arrived += b"".join(data for reads, data in self._in_flight if reads < 0)
+        self._in_flight = [reply for reply in self._in_flight if reply[0] >= 0]
+        return len(self._arrived)
+
+    def read(self, size):
+        data, self._arrived = self._arrived[:size], self._arrived[size:]
+        return data
+
+    def reset_input_buffer(self):
+        self._arrived = b""
+
+    def close(self):
         self.closed = True
 
-    def identity(self):
-        return {"port": self.port, "balance_id": self.balance_id, "firmware": self.firmware}
+    def write(self, data):
+        command = data.decode("ascii").removesuffix("\r\n")
+        self.received.append(command)
+        if not self.silent:
+            self._answer(command)
 
-    def weight(self):
-        torque = self._axis.k * abs(self._axis.controller.input_torque)
-        return Weight(self.tare_g + torque / self._arm_length_m / units.STANDARD_GRAVITY * 1000, True)
+    def _answer(self, command):
+        if self._transition_left and command not in ("ON", "OFF"):
+            self._transition_left -= 1
+            if not self.standby:  # still waking: unanswered
+                return
+        elif self.standby and command != "ON":
+            return self._reply("EL")
+        if self.calibrating and command == "IP":
+            return self._reply("IP I")
+        if command == "IP":
+            self._weights_sent += 1
+            if self._weights_sent == self.standby_after_weights:
+                self.standby = True
+            return self._reply(self.weight_line() + "\r\n" * 4)
+        queries = {
+            "PV": "Sr 1.06",
+            "PSN": "Balance ID: B000000001",
+            "PT": f"Tare: {self.tare_g:10.1f} {self.unit:>5} T",
+            "P#": f"APW: {self.piece_weight_g} g",
+            "P%": f"Ref. Weight: {self.reference_weight_g:.1f} g",
+        }
+        if command in queries:
+            return self._reply(queries[command])
+        if command == "CP":  # answered by the weights it starts sending, not OK!
+            self.continuous = True
+            return
+        if header := re.fullmatch(r"([1-5])H", command):
+            return self._reply(f'H {header[1]} "{self.headers[int(header[1])]}"')
+        if self._act(command):
+            if self.acknowledge:
+                self._reply("OK!")
+        elif command == "IC":
+            self._reply("IC L")
+        else:
+            self._reply("ES")
 
-    def poll(self):
-        return [self.weight()]
+    def _act(self, command):
+        """Carry out a command acknowledged with OK! True if it's one."""
+        actions = {
+            "Z": lambda: (setattr(self, "zero_g", self.zero_g + self.gross_g()), setattr(self, "tare_g", 0.0)),
+            "T": lambda: setattr(self, "tare_g", self.gross_g()),
+            "OFF": lambda: self._enter_standby(True),
+            "ON": lambda: self._enter_standby(False),
+            "C": lambda: setattr(self, "calibrating", True),
+            "AC": lambda: setattr(self, "calibrating", False),
+            "SLP": lambda: None,
+            "SLZP": lambda: None,
+            "0P": lambda: setattr(self, "continuous", False),
+            "0RL": lambda: setattr(self, "acknowledge", False),
+            "1RL": lambda: setattr(self, "acknowledge", True),
+        }
+        if command in actions:
+            actions[command]()
+        elif match := re.fullmatch(r"(\d+(?:\.\d+)?)([T#%P])", command):
+            value, kind = float(match[1]), match[2]
+            if kind == "P" and not (value.is_integer() and value <= 3600):
+                return False
+            attribute = {"T": "tare_g", "#": "piece_weight_g", "%": "reference_weight_g"}.get(kind)
+            if attribute:
+                setattr(self, attribute, round(value, 1) if kind == "T" else value)
+        elif match := re.fullmatch(r'H ([1-5]) "([^"]{0,25})"', command):
+            self.headers[int(match[1])] = match[2]
+        else:
+            return False
+        return True
 
-    def sample(self, seconds):
-        return [(seconds * index / 10, self.weight()) for index in range(11)]
+    def _enter_standby(self, standby):
+        self.standby = standby
+        self._transition_left = self.transition_commands
 
-    def clear(self):
-        pass
+    def _reply(self, line):
+        self._in_flight.append([self.lag, (line + "\r\n").encode("ascii")])
+
+
+def lever_load(axis, arm_length_m, tare_g=50.0):
+    """The load a lever arm of `arm_length_m` puts on the balance: its resting `tare_g` plus the fake motor's torque."""
+    return lambda: tare_g + axis.k * abs(axis.controller.input_torque) / arm_length_m / units.STANDARD_GRAVITY * 1000

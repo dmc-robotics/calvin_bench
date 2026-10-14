@@ -51,11 +51,17 @@ calvin_bench/
 <<<<<<< old
 OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `bench/hardware/scale.py`, standalone so other experiments can use the balance.
 =======
-OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `OhausAdventurer` in `bench/hardware/ohaus_adventurer.py`, standalone so other experiments can use the balance.
+OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `OhausAdventurer` in `bench/hardware/ohaus_adventurer.py`. It's self-contained (pyserial only, raises `OhausError`, which the CLI catches next to `BenchError`) so other projects can copy it; keep it free of `bench` imports. It covers the manual's whole command table; its docstring lists every reply, probed on the real balance 2026-10-14. The manual and datasheet are in `docs/`.
 >>>>>>> new
+<<<<<<< old
 - Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_PORT`), 9600 baud, 8N1.
 - ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` (`?` = unstable) then blank lines; `PV` → `Sr 1.06`; `PSN` → `Balance ID: B816716802`.
 - ~90 ms per reply, ~8 readings/s when polled. Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
+=======
+- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_SCALE_PORT` in `static_gain`), 9600 baud, 8N1.
+- ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` then blank lines: `?` = unstable, a trailing `N` = net (tared; the manual says `NET`). Other commands answer `OK!`. Refusals: `ES` unknown command or bad value, `EL` standby, `IP I` busy (calibrating), `IC L` not on this model. `SP` is useless: sent while unstable, it's never answered.
+- ~100 ms per reply, ~8.7 readings/s when polled (`CP` streams ~10.3/s). Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
+>>>>>>> new
 
 ## Bench safety (on top of the root rules)
 - Keep torque limits small until the user raises them.

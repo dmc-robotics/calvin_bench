@@ -3,6 +3,7 @@ import argparse
 
 from bench.errors import BenchError
 from bench.experiments import static_gain
+from bench.hardware.ohaus_adventurer import OhausError
 from bench.runs import Run
 
 EXPERIMENTS = {experiment.NAME: experiment for experiment in (static_gain,)}
@@ -28,7 +29,7 @@ def main():
             EXPERIMENTS[arguments.experiment].record(arguments)
         else:
             analyze(Run(arguments.run_directory), show=not arguments.no_show)
-    except BenchError as error:
+    except (BenchError, OhausError) as error:
         parser.exit(1, f"{error}\n")
     except KeyboardInterrupt:
         parser.exit(1, "\nInterrupted. Motor idled.\n" if arguments.command == "record" else "\n")
