@@ -3,6 +3,7 @@ import builtins
 
 import pytest
 
+from bench.errors import BenchError
 from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Settings
@@ -102,7 +103,7 @@ def test_r_repeats_a_level(device, runs_directory, monkeypatch):
 def test_shaft_motion_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
     device.axis0.slip_after_reads = 3
-    with pytest.raises(SystemExit, match="arm slipped"):
+    with pytest.raises(BenchError, match="shaft moved"):
         procedure.record(Settings("left", ARM_LENGTH_M, **QUICK))
     assert device.axis0.is_idle
     assert device.axis0.controller.config.vel_limit == 10.0
@@ -111,7 +112,7 @@ def test_shaft_motion_stops_the_run_with_the_motor_idle(device, scale, runs_dire
 def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, scale, runs_directory, monkeypatch):
     bench = Bench(confirm="n")
     monkeypatch.setattr(builtins, "input", bench)
-    with pytest.raises(SystemExit, match="Aborted"):
+    with pytest.raises(BenchError, match="Aborted"):
         procedure.record(Settings("left", ARM_LENGTH_M, **QUICK))
     assert "e-stop" in bench.prompts[0]
     assert device.axis0.arm_count == 0
@@ -120,11 +121,11 @@ def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, sca
 
 def test_the_wrong_odrive_moves_nothing(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
-    with pytest.raises(SystemExit, match="Wrong ODrive"):
+    with pytest.raises(BenchError, match="Wrong ODrive"):
         procedure.record(Settings("right", ARM_LENGTH_M, **QUICK))
     assert device.axis0.arm_count == 0
 
 
 def test_settings_refuse_levels_above_the_max_torque():
-    with pytest.raises(SystemExit, match="max torque"):
+    with pytest.raises(BenchError, match="max torque"):
         Settings("left", ARM_LENGTH_M, from_above=True)  # 0.25 + 0.05 overshoot > 0.25

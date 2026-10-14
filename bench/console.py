@@ -1,11 +1,13 @@
 """Prompts for the person at the bench. Procedures print their own progress lines; every question goes through here."""
 import math
 
+from bench.errors import BenchError
+
 
 def confirm(question):
     """Continue on y, abort the run on anything else."""
     if input(f"{question} [y/N] ").strip().lower() != "y":
-        raise SystemExit("Aborted.")
+        raise BenchError("Aborted.")
 
 
 def ask_number(prompt, allow_repeat=False):

@@ -2,7 +2,8 @@
 import pytest
 from odrive.enums import AxisState
 
-from bench.hardware.odrive_usb import ODriveUsb, ShaftMoved
+from bench.errors import BenchError
+from bench.hardware.odrive_usb import ODriveUsb
 from fakes import TORQUE_CONSTANT_NMA
 
 
@@ -17,7 +18,7 @@ def test_require_ready_lists_every_problem(device):
     axis.config.enable_watchdog = False
     axis.controller.config.vel_gain = 0
     axis.config.motor.current_soft_max = 5.0
-    with ODriveUsb.connect() as odrive, pytest.raises(SystemExit) as error:
+    with ODriveUsb.connect() as odrive, pytest.raises(BenchError) as error:
         odrive.require_ready("left", 0.25)
     message = str(error.value)
     for problem in ("Wrong ODrive", "watchdog is off", "vel_gain is 0", "above current_soft_max"):
@@ -45,7 +46,7 @@ def test_hold_applies_the_profile_in_order(device):
 def test_hold_aborts_on_shaft_motion_and_ends_idle(device):
     device.axis0.slip_after_reads = 2
     with ODriveUsb.connect() as odrive:
-        with pytest.raises(ShaftMoved):
+        with pytest.raises(BenchError, match="shaft moved"):
             odrive.hold([(0.1, 0.5)], sample_s=0.1)
         assert device.axis0.is_idle
 
@@ -62,7 +63,7 @@ def test_hold_ends_idle_when_the_callback_fails(device):
 
 def test_hold_refuses_to_continue_if_the_axis_drops_out_of_closed_loop(device):
     device.axis0.refuses_closed_loop = True
-    with ODriveUsb.connect() as odrive, pytest.raises(SystemExit, match="closed loop"):
+    with ODriveUsb.connect() as odrive, pytest.raises(BenchError, match="closed loop"):
         odrive.hold([(0.1, 0.1)], sample_s=0.05)
     assert all(torque == 0 for torque in device.axis0.torque_log)
     assert device.axis0.is_idle

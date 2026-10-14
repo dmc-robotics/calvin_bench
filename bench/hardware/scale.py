@@ -15,6 +15,8 @@ from typing import NamedTuple
 
 import serial
 
+from bench.errors import BenchError
+
 # Safe to hard-code: macOS names the port after the serial number of the FTDI chip inside the balance,
 # so it stays the same across replugs, reboots and USB sockets.
 DEFAULT_PORT = "/dev/cu.usbserial-DN04KNBY"
@@ -38,7 +40,7 @@ class Scale:
         try:
             self._serial = serial.Serial(port, BAUD, timeout=0)
         except serial.SerialException as error:
-            raise SystemExit(f"Can't open the scale on {port}: {error}")
+            raise BenchError(f"Can't open the scale on {port}: {error}")
         self.port = port
         self._buffer = b""
         self._requested_at = None
@@ -47,7 +49,7 @@ class Scale:
             self.balance_id = self._query(b"PSN").partition(":")[2].strip()
             reply = self._query(b"IP")
             if parse_weight(reply) is None:
-                raise SystemExit(f"The scale's weight reply didn't parse: {reply!r}.{REFUSED_HINT if reply == 'EL' else ''}")
+                raise BenchError(f"The scale's weight reply didn't parse: {reply!r}.{REFUSED_HINT if reply == 'EL' else ''}")
         except BaseException:
             self.close()
             raise
@@ -100,7 +102,7 @@ class Scale:
             if lines:
                 return lines[0]
             time.sleep(POLL_PERIOD_S)
-        raise SystemExit(f"No reply from the scale on {self.port}. Is it on, and is this its port?")
+        raise BenchError(f"No reply from the scale on {self.port}. Is it on, and is this its port?")
 
     def _read_lines(self):
         self._buffer += self._serial.read(self._serial.in_waiting)
@@ -115,5 +117,5 @@ def parse_weight(line):
         return None
     sign, value, unit, unstable = match.groups()
     if unit != "g":
-        raise SystemExit(f"The scale is reading in {unit}. Switch it to grams.")
+        raise BenchError(f"The scale is reading in {unit}. Switch it to grams.")
     return Weight(float(sign + value), unstable is None)

@@ -1,6 +1,7 @@
 """The `bench` command line tool: `bench record <experiment> ...` and `bench analyze <run folder>`."""
 import argparse
 
+from bench.errors import BenchError
 from bench.experiments import static_gain
 from bench.runs import Run
 
@@ -22,14 +23,22 @@ def main():
 
     arguments = parser.parse_args()
 
-    if arguments.command == "record":
-        try:
+    try:
+        if arguments.command == "record":
             EXPERIMENTS[arguments.experiment].record(arguments)
-        except KeyboardInterrupt:
-            parser.exit(1, "\nInterrupted. Motor idled.\n")
-    else:
-        run = Run(arguments.run_directory)
-        EXPERIMENTS[run.meta["experiment"]].analyze(run, show=not arguments.no_show)
+        else:
+            analyze(Run(arguments.run_directory), show=not arguments.no_show)
+    except BenchError as error:
+        parser.exit(1, f"{error}\n")
+    except KeyboardInterrupt:
+        parser.exit(1, "\nInterrupted. Motor idled.\n" if arguments.command == "record" else "\n")
+
+
+def analyze(run, show):
+    name = run.meta["experiment"]
+    if name not in EXPERIMENTS:
+        raise BenchError(f"{run.name} is a {name!r} run, which bench can't analyze yet.")
+    EXPERIMENTS[name].analyze(run, show=show)
 
 
 if __name__ == "__main__":

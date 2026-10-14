@@ -2,6 +2,7 @@
 import pytest
 
 from bench import units
+from bench.errors import BenchError
 from bench.experiments.static_gain import analysis
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DIRECTIONS, Measurement
 from bench.runs import Run
@@ -93,3 +94,9 @@ def test_skips_an_incomplete_direction(tmp_path):
     assert "asymmetry_percent" not in results
     assert len(results["warnings"]) == 1
     assert "negative skipped" in results["warnings"][0]
+
+
+def test_a_run_with_no_complete_direction_raises(tmp_path):
+    incomplete = [m for m in make_measurements() if m.approach != "tare"]
+    with pytest.raises(BenchError, match="No complete direction"):
+        fit(tmp_path, incomplete)

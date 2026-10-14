@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from bench import units
+from bench.errors import BenchError
 from bench.experiments.static_gain.data import DIRECTIONS
 
 TARE_DRIFT_LIMIT_G = 2.0
@@ -38,7 +39,7 @@ def fit(rows, arm_length_m, torque_constant_NmA):
         warnings += [f"{direction}: {warning}" for warning in direction_fit.warnings]
 
     if not fits:
-        raise SystemExit("No complete direction in this run.")
+        raise BenchError("No complete direction in this run.")
 
     k = float(np.mean([direction_fit.summary["k"] for direction_fit in fits.values()]))
     results = {

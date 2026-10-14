@@ -17,6 +17,8 @@ import odrive
 from odrive.enums import AxisState, ControlMode, InputMode
 from odrive.utils import backup_config, dump_errors
 
+from bench.errors import BenchError
+
 NODE_IDS = {"left": 1, "right": 2}
 
 LOOP_PERIOD_S = 0.02
@@ -31,10 +33,6 @@ VELOCITY_CAP_MAX_REV_PER_S = 5.0
 WATCHDOG_TIMEOUT_RANGE_S = (0.05, 0.2)
 FET_TEMPERATURE_LIMIT_C = 80.0
 MOTOR_TEMPERATURE_LIMIT_C = 60.0
-
-
-class ShaftMoved(SystemExit):
-    """The shaft moved during a hold, so the fixture slipped. The axis is idle by the time the caller sees this."""
 
 
 class Signals(NamedTuple):
@@ -115,7 +113,7 @@ class ODriveUsb:
         self.temperatures()
 
         if problems:
-            raise SystemExit("Not starting:\n  - " + "\n  - ".join(problems))
+            raise BenchError("Not starting:\n  - " + "\n  - ".join(problems))
 
     def velocity_cap_for(self, torque_Nm):
         """A vel_limit that can't clip `torque_Nm` at stall."""
@@ -211,7 +209,7 @@ class ODriveUsb:
             self._axis.watchdog_feed()
             position, velocity = self.motion()
             if abs(position - start_position) > MOTION_LIMIT_REV or abs(velocity) > SPEED_LIMIT_REV_PER_S:
-                raise ShaftMoved("The shaft moved during the hold, so the fixture slipped. Motor idled.")
+                raise BenchError("The shaft moved during the hold: the fixture slipped. Motor idled.")
             if sample:
                 samples.append(self.signals())
             if during:
@@ -223,4 +221,4 @@ class ODriveUsb:
         if self._axis.current_state != AxisState.CLOSED_LOOP_CONTROL:
             self.stop()
             dump_errors(self._device)
-            raise SystemExit("The axis isn't in closed loop. Clear the errors and rerun.")
+            raise BenchError("The axis isn't in closed loop. Clear the errors and rerun.")

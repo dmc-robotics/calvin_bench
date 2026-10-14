@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 
 from bench import console
 from bench.experiments.static_gain.data import DIRECTIONS, EXPERIMENT, Measurement, ScaleSample
-from bench.hardware.odrive_usb import ODriveUsb, ShaftMoved
+from bench.hardware.odrive_usb import ODriveUsb
 from bench.hardware.scale import Scale
 from bench.runs import Run
 
@@ -121,8 +121,6 @@ class Recorder:
             self.scale.clear()
         try:
             hold = self.odrive.hold(profile, settings.sample_s, during=poll_scale if self.scale else None)
-        except ShaftMoved:
-            raise SystemExit("The shaft moved during the hold: the arm slipped or missed the scale. Motor idled.")
         finally:
             self._last_hold_end = time.monotonic()
         samples = [

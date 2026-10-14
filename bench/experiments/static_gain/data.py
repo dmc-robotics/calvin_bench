@@ -1,6 +1,7 @@
 """What a static-gain run holds: its Settings (in meta.json), data.csv rows (Measurement) and scale.csv rows (ScaleSample)."""
 from dataclasses import dataclass
 
+from bench.errors import BenchError
 from bench.hardware import scale
 
 EXPERIMENT = "static-gain"
@@ -27,7 +28,7 @@ class Settings:
 
     def __post_init__(self):
         if self.highest_torque_Nm > self.max_torque_Nm:
-            raise SystemExit(
+            raise BenchError(
                 f"Levels reach {self.highest_torque_Nm:.3f} N·m, above the max torque {self.max_torque_Nm:.3f} N·m. "
                 "Raise --max-torque deliberately if you mean it."
             )
