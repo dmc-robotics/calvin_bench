@@ -3,6 +3,8 @@ import math
 
 from bench.errors import BenchError
 
+REPEAT = object()  # what ask_number returns when they type r
+
 
 def confirm(question):
     """Continue on y, abort the run on anything else."""
@@ -11,11 +13,11 @@ def confirm(question):
 
 
 def ask_number(prompt, allow_repeat=False):
-    """A finite number typed in, or None if `allow_repeat` and they type r."""
+    """A finite number typed in, or REPEAT if `allow_repeat` and they type r."""
     while True:
         answer = input(prompt).strip().lower()
         if allow_repeat and answer == "r":
-            return None
+            return REPEAT
         try:
             value = float(answer)
         except ValueError:

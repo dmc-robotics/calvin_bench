@@ -18,7 +18,7 @@ STICTION_NM = 0.006
 def make_measurements(from_above=False, setpoint_error=0.0, tare_drift_g=0.0):
     measurements = []
     for direction, sign in DIRECTIONS.items():
-        measurements.append(tare(direction, TARE_G))
+        measurements.append(tare(len(measurements), direction, TARE_G))
         approaches = {"below": 0.0, "above": STICTION_NM} if from_above else {"below": 0.0}
         for approach, stiction in approaches.items():
             for level in DEFAULT_LEVELS_NM:
@@ -27,15 +27,21 @@ def make_measurements(from_above=False, setpoint_error=0.0, tare_drift_g=0.0):
                 torque = K[direction] * command + OFFSET_NM[direction] + sign * 2 * stiction
                 grams = TARE_G + tare_drift_g / 2 + sign * torque / ARM_LENGTH_M / units.STANDARD_GRAVITY * 1000
                 measurements.append(Measurement(
-                    direction, approach, command, grams, 0.1, 8, 8,
-                    command / TORQUE_CONSTANT_NMA * (1 + setpoint_error), command / TORQUE_CONSTANT_NMA, 15.8, 30.0, None,
+                    hold=len(measurements), direction=direction, approach=approach, torque_command_Nm=command,
+                    scale_g=grams, scale_std_g=0.1, scale_samples=8, scale_stable_samples=8,
+                    iq_setpoint_A=command / TORQUE_CONSTANT_NMA * (1 + setpoint_error), iq_measured_A=command / TORQUE_CONSTANT_NMA,
+                    vbus_V=15.8, fet_temperature_C=30.0, motor_temperature_C=None,
                 ))
-        measurements.append(tare(direction, TARE_G + tare_drift_g))
+        measurements.append(tare(len(measurements), direction, TARE_G + tare_drift_g))
     return measurements
 
 
-def tare(direction, grams):
-    return Measurement(direction, "tare", 0.0, grams, 0.0, 8, 8, None, None, None, 30.0, None)
+def tare(hold, direction, grams):
+    return Measurement(
+        hold=hold, direction=direction, approach="tare", torque_command_Nm=0.0,
+        scale_g=grams, scale_std_g=0.0, scale_samples=8, scale_stable_samples=8,
+        iq_setpoint_A=None, iq_measured_A=None, vbus_V=None, fet_temperature_C=30.0, motor_temperature_C=None,
+    )
 
 
 def fit(tmp_path, measurements):

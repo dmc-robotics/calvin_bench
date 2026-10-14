@@ -68,6 +68,7 @@ class Settings:
 @dataclass(frozen=True)
 class Measurement:
     """A data.csv row: a tare (motor idle, command 0, no Iq or vbus) or a held torque level. Empty cells are None."""
+    hold: int  # numbers every tare and hold in the run from 0, repeats included; scale.csv rows carry the same number
     direction: str  # positive or negative
     approach: str  # tare, below or above
     torque_command_Nm: float
@@ -85,6 +86,7 @@ class Measurement:
 @dataclass(frozen=True)
 class ScaleSample:
     """A scale.csv row: one balance reading. time_s counts from when the torque was applied (negative during an overshoot)."""
+    hold: int  # the tare or hold it was read during: the data.csv row with this number, none if it was repeated
     direction: str
     approach: str
     torque_command_Nm: float

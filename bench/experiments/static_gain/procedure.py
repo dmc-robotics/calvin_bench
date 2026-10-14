@@ -52,56 +52,67 @@ def record(settings):
         run.write_json("odrive_config", drive.config())
         print(f"Recording to {run.directory}")
 
-        recorder = Recorder(settings, drive, scale, run)
+        session = Session(settings, drive, scale, run)
         for direction, sign in DIRECTIONS.items():
             console.confirm(f"\n{direction.capitalize()} direction: scale placed so {direction} torque pushes the arm onto it?")
-            recorder.tare(direction)
+            session.tare(direction)
             for approach in settings.approaches:
                 for level in settings.levels_Nm:
-                    recorder.level(direction, approach, sign * level)
-            recorder.tare(direction, again=True)
+                    session.level(direction, approach, sign * level)
+            session.tare(direction, again=True)
 
     print(f"\nDone. Analyze with: bench analyze {run.directory}")
 
 
-class Recorder:
-    """The steps of one recording, writing a row for each. Keeps the rest timer between holds."""
+class Session:
+    """The steps of one recording, writing a row for each. Numbers every tare and hold, and keeps the rest timer between holds."""
 
     def __init__(self, settings, drive, scale, run):
         self.settings = settings
         self.drive = drive
         self.scale = scale
         self.run = run
+        self._holds = 0
         self._last_hold_end = -math.inf
 
     def tare(self, direction, again=False):
         """The arm's resting weight, motor idle."""
         self._rest()
+        hold = self._next_hold()
         label = "Tare again" if again else "Tare"
         samples = []
         if self.scale:
             print(f"Motor idle. Reading the {label.lower()} for {self.settings.hold_s} s...")
             samples = [
-                ScaleSample(direction, "tare", 0.0, round(time_s, 3), weight.grams, weight.stable)
+                ScaleSample(hold, direction, "tare", 0.0, round(time_s, 3), weight.grams, weight.stable)
                 for time_s, weight in self.scale.sample(self.settings.hold_s)
             ]
+        self.run.append("scale", *samples)
         reading = self._reading(samples, label)
-        self.run.append("data", measurement(direction, "tare", 0.0, reading, self.drive.temperatures()))
+        self.run.append("data", measurement(hold, direction, "tare", 0.0, reading, self.drive.temperatures()))
         print(f"  {label}: {reading}")
 
     def level(self, direction, approach, torque_Nm):
-        """Hold one torque level and record it. Typing r instead of a reading repeats the hold."""
+        """Hold one torque level and record it. Typing r instead of a reading repeats the hold under a new number."""
         label = f"{torque_Nm:+.3f} N·m ({approach})"
-        reading = None
-        while reading is None:
+        while True:
             temperatures = wait_until_cool(self.drive)
             self._rest()
-            signals, samples = self._hold(direction, approach, torque_Nm)
+            hold = self._next_hold()
+            signals, samples = self._hold(hold, direction, approach, torque_Nm)
+            self.run.append("scale", *samples)
             reading = self._reading(samples, label, allow_repeat=True)
-        self.run.append("data", measurement(direction, approach, torque_Nm, reading, temperatures, signals))
+            if reading is not console.REPEAT:
+                break
+        self.run.append("data", measurement(hold, direction, approach, torque_Nm, reading, temperatures, signals))
         print(f"  {label}: {reading}, Iq {signals.iq_measured_A:+.2f} A, {temperatures}")
 
-    def _hold(self, direction, approach, torque_Nm):
+    def _next_hold(self):
+        hold = self._holds
+        self._holds += 1
+        return hold
+
+    def _hold(self, hold, direction, approach, torque_Nm):
         """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout.
         Returns (Signals averaged over the last sample_s, ScaleSamples)."""
         settings = self.settings
@@ -125,16 +136,15 @@ class Recorder:
         window_start = started_at + settings.hold_s - settings.sample_s
         signals = Signals(*map(statistics.fmean, zip(*(signals for when, signals in ticks if when >= window_start))))
         samples = [
-            ScaleSample(direction, approach, torque_Nm, round(when - started_at, 3), weight.grams, weight.stable)
+            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.grams, weight.stable)
             for when, weight in weights
         ]
         return signals, samples
 
     def _reading(self, samples, label, allow_repeat=False):
         """The settled reading from the balance's samples, or a typed one when there's no scale or too few samples.
-        None if they typed r to repeat."""
+        console.REPEAT if they typed r."""
         if self.scale:
-            self.run.append("scale", *samples)
             reading = settle(samples, self.settings.hold_s - self.settings.sample_s, self.settings.minimum_scale_readings)
             if reading:
                 return reading
@@ -142,7 +152,7 @@ class Recorder:
         else:
             question = f"{label}: scale reading (g)"
         grams = console.ask_number(f"{question}{', r to repeat' if allow_repeat else ''}: ", allow_repeat)
-        return None if grams is None else Reading(grams)
+        return grams if grams is console.REPEAT else Reading(grams)
 
     def _rest(self):
         time.sleep(max(0.0, self._last_hold_end + self.settings.rest_s - time.monotonic()))
@@ -166,9 +176,11 @@ def wait_until_cool(drive):
     return temperatures
 
 
-def measurement(direction, approach, torque_Nm, reading, temperatures, signals=None):
+def measurement(hold, direction, approach, torque_Nm, reading, temperatures, signals=None):
     iq_setpoint, iq_measured, vbus = (round(value, 4) for value in signals) if signals else (None, None, None)
     return Measurement(
-        direction, approach, torque_Nm, reading.grams, reading.std_g, reading.samples, reading.stable_samples,
-        iq_setpoint, iq_measured, vbus, temperatures.fet_C, temperatures.motor_C,
+        hold=hold, direction=direction, approach=approach, torque_command_Nm=torque_Nm,
+        scale_g=reading.grams, scale_std_g=reading.std_g, scale_samples=reading.samples, scale_stable_samples=reading.stable_samples,
+        iq_setpoint_A=iq_setpoint, iq_measured_A=iq_measured, vbus_V=vbus,
+        fet_temperature_C=temperatures.fet_C, motor_temperature_C=temperatures.motor_C,
     )

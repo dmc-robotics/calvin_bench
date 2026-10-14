@@ -6,7 +6,7 @@ _Review of 2026-10-13. Item IDs (H1, M3, …) are for reference in questions. Do
 
 ## Decisions for you
 
-- [ ] **Hold index column** (M3): add a `hold` column to `data.csv` and `scale.csv`, so a repeated hold's scale samples can be told apart and linked to their measurement row. This changes the CSV format.
+- [x] **Hold index column** (M3): add a `hold` column to `data.csv` and `scale.csv`, so a repeated hold's scale samples can be told apart and linked to their measurement row. This changes the CSV format.
 - [ ] **Delete Python stubs** (Low): remove `bench/waveforms.py`, `bench/hardware/link.py` and the unused `scipy` dependency until M3. PLAN already describes them.
 - [x] **Split `hold()`** (H2): the driver keeps the safety (`armed()` context + `apply(torque_Nm, seconds, during)`); the profile, overshoot, sampling window and averaging move to static-gain's procedure. Done in step 2.
 - [ ] **Typed run reader** (M1): approve `Run.rows(table, RowType)` returning dataclasses. For the 1 kHz data at M3, choosing between numpy structured arrays and pandas is a separate decision.
@@ -41,11 +41,11 @@ Why: validation is split across argparse types, `Settings.__post_init__` and the
 - [x] Tests for the `Settings` validation cases (`tests/test_static_gain_settings.py`).
 
 ### 4. M3: make `procedure.py` easier to read
-- [ ] Rename `Recorder` (`procedure.py:70`) to `Session`. Today it has the same name as InstinctusCore's ISR ring buffer `Recorder`.
-- [ ] Move the `scale.csv` append out of `_reading()` (`:138`) into `tare()`/`level()`. Today a getter-like method has a hidden write.
-- [ ] Replace "`None` means repeat", which is passed through `console.ask_number` and `_reading`, with a named `REPEAT` sentinel.
-- [ ] Build `Measurement` with keyword arguments (`procedure.py:170–175`, `tests/test_static_gain_analysis.py:28–31,37`).
-- [ ] _(If decided)_ Add the `hold` index column, and update the columns in `instructions/02`.
+- [x] Rename `Recorder` (`procedure.py:70`) to `Session`. Today it has the same name as InstinctusCore's ISR ring buffer `Recorder`.
+- [x] Move the `scale.csv` append out of `_reading()` (`:138`) into `tare()`/`level()`. Today a getter-like method has a hidden write.
+- [x] Replace "`None` means repeat", which is passed through `console.ask_number` and `_reading`, with a named `REPEAT` sentinel.
+- [x] Build `Measurement` with keyword arguments (`procedure.py:170–175`, `tests/test_static_gain_analysis.py:28–31,37`).
+- [x] Add the `hold` index column, and update the columns in `instructions/02`. Tares get numbers too, since they have scale samples; a repeated hold uses up a number and has no `data.csv` row.
 
 ### 5. M1 + M2: typed data from run folders to report
 Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "pure" analysis parses CSV strings, and `report.py` looks up results by string key.

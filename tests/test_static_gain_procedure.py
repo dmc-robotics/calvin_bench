@@ -54,7 +54,9 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["scale"]["balance_id"] == "FAKE"
     assert run.read_json("odrive_config") == {"fake": True}
     assert len(run.rows("data")) == 2 * (2 + len(DEFAULT_LEVELS_NM))
-    assert run.rows("scale")
+    holds = [row["hold"] for row in run.rows("data")]
+    assert holds == [str(hold) for hold in range(len(holds))]
+    assert {row["hold"] for row in run.rows("scale")} == set(holds)  # every tare and hold has its scale samples
 
     static_gain.analyze(run, show=False)
     results = run.read_json("results")
@@ -98,7 +100,8 @@ def test_r_repeats_a_level(device, runs_directory, monkeypatch):
     procedure.record(Settings("left", ARM_LENGTH_M, levels_Nm=levels, **QUICK))
 
     assert device.axis0.arm_count == 2 * len(levels) + 1
-    assert len(only_run(runs_directory).rows("data")) == 2 * (2 + len(levels))
+    holds = [int(row["hold"]) for row in only_run(runs_directory).rows("data")]
+    assert holds == [0, *range(2, 2 * (2 + len(levels)) + 1)]  # hold 1 was repeated, so it has no row
 
 
 def test_shaft_motion_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
