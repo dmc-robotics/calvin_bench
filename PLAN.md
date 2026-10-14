@@ -1,11 +1,12 @@
 # Calvin Bench: Plan
 
-_Last updated 2026-10-13._
+_Last updated 2026-10-14._
 
 ## Status
 
 - **Current milestone: M0** (ODrive bring-up over USB). Needs the user at the bench.
 - File structure is scaffolded (firmware stubs compile). The CLI has `bench record static-gain` and `bench analyze` for experiment 2 (tested against a fake ODrive device and on the real balance; `uv run pytest` covers the driver's safety, the procedure end to end and the analysis). On the first real run, check in `scale.csv` that the balance settles before the averaged last second of each hold. The rest is a stub. Nothing has run on hardware yet.
+- **Before the first real experiment 2 run:** do the bench check in `TODO.md` (Pre-run review → "Bench check"): the idle watchdog, the feed gap, the Iq sign with `motor.direction = -1` and which way positive torque turns the shaft.
 - Next code work: M1 (InstinctusCore `ODriveCan` + bench sketch text commands), once M0 is done.
 
 ## Goal

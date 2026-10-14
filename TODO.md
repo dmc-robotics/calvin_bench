@@ -99,9 +99,6 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] `meta["scale"]` is `None` without a balance, not `"manual"`.
 - [x] A run marks itself finished (`finished.json`, `Run.finished`), so later batch analyses (experiment 9) can skip aborted runs.
 
-### Bench check (needs the user's go-ahead)
-- [ ] Arm once at zero torque: does ODrive 0.6.12 flag the watchdog while idle? If so, `armed()` fails every hold with "Clear the errors".
-
 ## Pre-run review of 2026-10-14 (before the first real experiment 2 run)
 
 - [x] `odrive_config.json` is dumped in `connect()` before the velocity cap (`drive.configuration`), so it shows the real `vel_limit`.
@@ -112,8 +109,24 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [x] The hold loop sleeps to the next tick instead of a fixed 0.02 s, so read time doesn't add to the feed gap. Each hold prints its largest gap.
 - [x] No ODrive found raises `BenchError`; `scale.csv` gets a `net` column; the analysis warns about a run without `finished.json`; `instructions/02` fixes (step reference, don't save the raised `current_soft_max`).
 - [x] Third code review: an aborted hold still writes its `odrive.csv`/`scale.csv` rows (the slip tick included); the fake watchdog counts trips; float tolerance on `max_torque_Nm`; the analysis counts only from-below levels and refuses a held level without Iq; the balance port has a write timeout; tick timestamps taken at the feed; `finished_at` has its UTC offset; safer test timing.
-- [ ] **Bench check script (needs the user's go-ahead):** arm at zero torque while polling the balance (largest feed gap; does 0.6.12 flag the watchdog while idle?), then 0.02 N·m with the arm on the scale (Iq sign with `motor.direction = -1`; which way positive torque turns the shaft).
-- [ ] Depending on the check: correct the Iq sign in the analysis (the clipping warning and Kt fit assume Iq has the command's sign), a setup line in `instructions/02` on finding the positive direction, and stop the run if the first level reads below the tare ("scale on the wrong side?").
+
+### Bench check, before the first real run (next step; moves the motor, so it needs the user's go-ahead)
+
+Four questions only the hardware can answer. Each one can spoil or stop the first `bench record static-gain` run:
+1. **Idle watchdog:** does ODrive 0.6.12 flag `WATCHDOG_TIMER_EXPIRED` while the axis is idle and nothing feeds it? If it does and the flag latches, every `armed()` fails after `ARMING_S` with "The axis isn't in closed loop. Clear the errors and rerun." Don't fix that by calling `clear_errors()` in `armed()`: it would also clear a latched e-stop and re-arm after one. Instead, clear only that one error, or feed the watchdog while idle.
+2. **Feed gap on this Mac:** each tick does about six USB property reads plus a balance poll. `apply()` aborts when the gap between watchdog feeds passes half `watchdog_timeout` (0.05 s at the configured 0.1 s). The fakes take no time, so only the hardware shows the margin. If the gaps come near 50 ms, set `watchdog_timeout` to 0.2 s in odrivetool (the driver accepts 0.1–0.2 s). Don't loosen `FEED_GAP_FRACTION`.
+3. **Iq sign:** both ODrives have `axis0.config.motor.direction = -1` (`odrive/*.json`, with `commutation_mapper.config.scale = -7`). So `foc.Iq_setpoint`/`Iq_measured` may be negative for a positive torque command. The fake gives Iq the command's sign. If the real one is opposite, `analysis.fit_direction` (`bench/experiments/static_gain/analysis.py`) is wrong in two places: the clipping check (`iq_setpoint × torque_constant` vs the command) warns "Torque was clipped; k is wrong" on every row, and the measured Kt fit comes out negative. `instructions/02` Analysis step 6 has the same assumption.
+4. **Positive direction:** which way does positive torque turn the shaft? Nothing tells the person which side of the axle to put the scale. On the wrong side, readings fall below the tare and k comes out negative with no error. Above the arm's own weight torque, the arm lifts until the motion check aborts.
+
+- [ ] **Write a scratch script** (scratchpad, not the repo) on the real drivers: `ODriveUsb.connect("left", 0.05)`, `OhausAdventurer.connect(DEFAULT_SCALE_PORT, unit="g")`, then `armed()`/`apply()`. Show it to the user before running it.
+  - Stage 1: arm at 0 N·m for ~3 s with `during=scale.poll`. Print the largest `Tick.feed_gap_s` and `odrive.utils.dump_errors`. Before arming, after the axis has sat idle unfed for a while, also dump the errors: that's question 1.
+  - Stage 2: with the arm resting on the scale, apply +0.02 N·m for ~1 s. Print the sign of `iq_setpoint_A` and `iq_measured_A`, and the scale reading's change from before. Heavier means positive torque pushes the arm onto the scale on that side. Light enough that a wrong-side arm only lifts a little.
+  - Before either stage, the user confirms: wheels clear, e-stop in reach, CAN unplugged from the ODrive (or the Teensy off), `odrivetool` closed, the balance on in grams.
+- [ ] **Act on the answers:**
+  - If Iq is opposite the command: record `axis0.config.motor.direction` in `ODriveUsb.identity()` (so it lands in `meta["odrive"]`), multiply Iq by it in the analysis, fix Analysis step 6, and give `FakeFoc` a direction so a test covers it.
+  - If the idle watchdog latches: handle it as in question 1.
+  - Add a setup line to `instructions/02`: which side of the axle the scale goes on for the positive direction.
+  - Add a check in `Session.level` (`procedure.py`): stop the run if a direction's first level reads below its tare by more than a few grams ("scale on the wrong side?").
 
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)
 
