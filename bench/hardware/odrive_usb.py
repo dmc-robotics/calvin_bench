@@ -127,11 +127,12 @@ class ODriveUsb:
             self._last_feed = None
             self.stop()
 
-    def apply(self, torque_Nm, seconds, during=None):
+    def apply(self, torque_Nm, seconds, during=None, ticks=None):
         """Hold `torque_Nm` for `seconds` with the shaft stalled against the fixture. Only inside `armed()`.
 
-        Every LOOP_PERIOD_S it feeds the watchdog, aborts if the shaft moved, records a Tick and calls `during()`,
-        which must return quickly: a gap between feeds over half the watchdog timeout aborts. Returns the Ticks.
+        Every LOOP_PERIOD_S it feeds the watchdog, records a Tick, aborts if the shaft moved and calls `during()`,
+        which must return quickly: a gap between feeds over half the watchdog timeout aborts. The Ticks are appended
+        to `ticks` as they're read, so a caller passing a list keeps them if the hold aborts; they're also returned.
         The torque stays on.
         """
         if self._start_position is None:
@@ -142,15 +143,16 @@ class ODriveUsb:
             )
         axis = self._axis
         axis.controller.input_torque = torque_Nm
-        ticks = []
+        ticks = [] if ticks is None else ticks
         next_tick = time.monotonic()
         end = next_tick + seconds
         while time.monotonic() < end:
             feed_gap_s = self._feed()
+            fed_at = time.monotonic()
             position, velocity = self.motion()
+            ticks.append(Tick(fed_at, feed_gap_s, position, velocity, *self.signals()))
             if abs(position - self._start_position) > MOTION_LIMIT_REV or abs(velocity) > SPEED_LIMIT_REV_PER_S:
                 raise BenchError("The shaft moved during the hold: the fixture slipped. Motor idled.")
-            ticks.append(Tick(time.monotonic(), feed_gap_s, position, velocity, *self.signals()))
             if during:
                 during()
             next_tick += LOOP_PERIOD_S  # sleep to the next tick, so the reads don't add to the gap between feeds

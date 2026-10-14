@@ -54,6 +54,7 @@ BAUD = 9600
 REPLY_TIMEOUT_S = 1.0
 STANDBY_TIMEOUT_S = 2.0
 WAKE_TIMEOUT_S = 5.0
+WRITE_TIMEOUT_S = 0.05  # a command is a few bytes (~1 ms each at 9600 baud); a stalled write raises rather than blocks
 POLL_PERIOD_S = 0.02
 HEADER_LINES = range(1, 6)
 HEADER_LENGTH = 25
@@ -101,7 +102,7 @@ class OhausAdventurer:
         checked to be in it. Turns acknowledgements on and stops any print mode, so replies aren't mixed with
         printouts. The port is closed on every exit."""
         try:
-            connection = serial.Serial(port, BAUD, timeout=0, exclusive=True)
+            connection = serial.Serial(port, BAUD, timeout=0, write_timeout=WRITE_TIMEOUT_S, exclusive=True)
         except serial.SerialException as error:
             raise OhausError(f"Can't open the balance on {port}: {error}")
         try:

@@ -11,6 +11,7 @@ DIRECTIONS = {"positive": 1.0, "negative": -1.0}
 DEFAULT_LEVELS_NM = (0.05, 0.10, 0.15, 0.20, 0.25)
 DEFAULT_MAX_TORQUE_NM = 0.25
 MINIMUM_LEVELS = 3  # for a line fit
+TORQUE_TOLERANCE_NM = 1e-9  # float rounding in a level plus the overshoot
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ class Settings:
             problems.append(f"rest_s is {self.rest_s}, expected 0 or more.")
         if self.minimum_scale_readings < 1:
             problems.append(f"minimum_scale_readings is {self.minimum_scale_readings}, expected 1 or more.")
-        if self.levels_Nm and self.highest_torque_Nm > self.max_torque_Nm:
+        if self.levels_Nm and self.highest_torque_Nm > self.max_torque_Nm + TORQUE_TOLERANCE_NM:
             problems.append(
                 f"levels reach {self.highest_torque_Nm:.3f} N·m, above the max torque {self.max_torque_Nm:.3f} N·m. "
                 "Raise --max-torque deliberately if you mean it."

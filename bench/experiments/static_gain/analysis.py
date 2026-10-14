@@ -86,9 +86,11 @@ def fit_direction(rows, sign, arm_length_m, torque_constant_NmA):
     tares = np.array([row.scale_g for row in rows if row.approach == "tare"])
     measured = [row for row in rows if row.approach != "tare"]
     command = np.array([row.torque_command_Nm for row in measured])
-    if len(tares) < 2 or len(np.unique(command)) < MINIMUM_LEVELS:
+    from_below = np.array([row.approach == "below" for row in measured], dtype=bool)
+    if len(tares) < 2 or len(np.unique(command[from_below])) < MINIMUM_LEVELS:
         return None
-    from_below = np.array([row.approach == "below" for row in measured])
+    if missing := [row.hold for row in measured if row.iq_setpoint_A is None or row.iq_measured_A is None]:
+        raise BenchError(f"holds {', '.join(map(str, missing))} have no iq_setpoint_A or iq_measured_A; every held level needs both.")
     scale = np.array([row.scale_g for row in measured])
     torque = sign * units.grams_to_newtons(scale - np.mean(tares)) * arm_length_m
 

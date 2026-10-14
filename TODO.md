@@ -106,11 +106,12 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 
 - [x] `odrive_config.json` is dumped in `connect()` before the velocity cap (`drive.configuration`), so it shows the real `vel_limit`.
 - [x] `odrive.csv`: every hold-loop tick (time, feed gap, position, velocity, Iq setpoint and measured, vbus), overshoot and repeats included.
-- [x] `meta.json` gets `started_at` and `code` (commit, uncommitted changes); `code.diff` holds `git diff HEAD` when there are changes.
+- [x] `meta.json` gets `started_at`. (Git provenance was added, then removed on the user's call: not needed.)
 - [x] Temperatures in `data.csv` are read right after the hold, not before the rest.
 - [x] Too few balance readings are used and flagged as low confidence (printed, and an analysis warning), never typed in. No readings at all stops the run.
 - [x] The hold loop sleeps to the next tick instead of a fixed 0.02 s, so read time doesn't add to the feed gap. Each hold prints its largest gap.
 - [x] No ODrive found raises `BenchError`; `scale.csv` gets a `net` column; the analysis warns about a run without `finished.json`; `instructions/02` fixes (step reference, don't save the raised `current_soft_max`).
+- [x] Third code review: an aborted hold still writes its `odrive.csv`/`scale.csv` rows (the slip tick included); the fake watchdog counts trips; float tolerance on `max_torque_Nm`; the analysis counts only from-below levels and refuses a held level without Iq; the balance port has a write timeout; tick timestamps taken at the feed; `finished_at` has its UTC offset; safer test timing.
 - [ ] **Bench check script (needs the user's go-ahead):** arm at zero torque while polling the balance (largest feed gap; does 0.6.12 flag the watchdog while idle?), then 0.02 N·m with the arm on the scale (Iq sign with `motor.direction = -1`; which way positive torque turns the shaft).
 - [ ] Depending on the check: correct the Iq sign in the analysis (the clipping warning and Kt fit assume Iq has the command's sign), a setup line in `instructions/02` on finding the positive direction, and stop the run if the first level reads below the tare ("scale on the wrong side?").
 

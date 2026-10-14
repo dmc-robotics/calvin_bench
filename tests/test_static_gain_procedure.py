@@ -8,7 +8,7 @@ from bench.experiments import static_gain
 from bench.experiments.static_gain import procedure
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, Measurement, ODriveSample, ScaleSample, Settings
 from bench.runs import Run
-from bench.hardware import ohaus_adventurer
+from bench.hardware import odrive_usb, ohaus_adventurer
 from bench.hardware.ohaus_adventurer import OhausError
 from fakes import FakeBalance, lever_load
 
@@ -59,7 +59,6 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["velocity_cap_rev_per_s"] == pytest.approx(1.5 * max(DEFAULT_LEVELS_NM) / device.axis0.controller.config.vel_gain)
     assert meta["scale"]["balance_id"] == "B000000001"
     assert run.read_json("odrive_config") == {"axis0.controller.config.vel_limit": 10.0}  # as found, not the cap
-    assert len(meta["code"]["commit"]) == 40
     assert meta["started_at"].startswith(run.name[:10])
     rows = run.rows("data", Measurement)
     assert len(rows) == 2 * (2 + len(DEFAULT_LEVELS_NM))
@@ -70,6 +69,7 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     torque_holds = {row.hold for row in rows if row.approach != "tare"}
     assert {sample.hold for sample in odrive_samples} == torque_holds
     assert all(sample.feed_gap_s < 0.05 for sample in odrive_samples)
+    assert not any(sample.net for sample in run.rows("scale", ScaleSample))
 
     assert run.finished
 
@@ -128,11 +128,14 @@ def test_r_repeats_a_level(device, runs_directory, monkeypatch):
 
 def test_shaft_motion_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
     monkeypatch.setattr(builtins, "input", Bench())
-    device.axis0.slip_after_reads = 3
+    device.axis0.slip_after_reads = 4  # connect and arming read once each, then the third tick of the first hold
     with pytest.raises(BenchError, match="shaft moved"):
         procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
     assert device.axis0.is_idle
     assert device.axis0.controller.config.vel_limit == 10.0
+    run = only_run(runs_directory)
+    assert run.rows("odrive", ODriveSample)[-1].position_rev == 1.0  # the aborted hold's ticks are kept
+    assert any(sample.approach == "below" for sample in run.rows("scale", ScaleSample))
 
 
 def test_the_balance_going_to_standby_mid_hold_stops_the_run_with_the_motor_idle(device, scale, runs_directory, monkeypatch):
@@ -147,11 +150,40 @@ def test_the_balance_going_to_standby_mid_hold_stops_the_run_with_the_motor_idle
     assert not only_run(runs_directory).finished
 
 
-def test_an_averaging_window_shorter_than_a_tick_is_refused_with_the_motor_idle(device, runs_directory, monkeypatch):
+def test_a_hold_with_no_odrive_readings_in_its_averaging_window_is_refused_with_the_motor_idle(device, runs_directory, monkeypatch):
+    real_apply = odrive_usb.ODriveUsb.apply
+
+    def ticks_before_the_window(self, torque_Nm, seconds, during=None, ticks=None):
+        ticks.extend(tick._replace(time_s=tick.time_s - seconds) for tick in real_apply(self, torque_Nm, seconds, during))
+        return ticks
+
+    monkeypatch.setattr(odrive_usb.ODriveUsb, "apply", ticks_before_the_window)
     monkeypatch.setattr(builtins, "input", Bench([50]))
     with pytest.raises(BenchError, match="No ODrive readings"):
-        procedure.record(Settings("left", ARM_LENGTH_M, **{**QUICK, "sample_s": 0.001}))
+        procedure.record(Settings("left", ARM_LENGTH_M, **QUICK))
     assert device.axis0.is_idle
+
+
+def test_temperatures_are_read_after_the_hold(device, scale, runs_directory, monkeypatch):
+    monkeypatch.setattr(builtins, "input", Bench())
+    weigh = scale.load_g
+
+    def weigh_and_heat():
+        if device.axis0.controller.input_torque:
+            device.axis0.motor.fet_thermistor.temperature = 40.0
+        return weigh()
+
+    scale.load_g = weigh_and_heat
+    procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
+    first_level = next(row for row in only_run(runs_directory).rows("data", Measurement) if row.approach == "below")
+    assert first_level.fet_temperature_C == 40.0
+
+
+def test_net_readings_are_marked(device, scale, runs_directory, monkeypatch):
+    monkeypatch.setattr(builtins, "input", Bench())
+    scale.tare_g = 10.0  # someone pressed Tare before the run
+    procedure.record(Settings("left", ARM_LENGTH_M, scale_port=SCALE_PORT, **QUICK))
+    assert all(sample.net for sample in only_run(runs_directory).rows("scale", ScaleSample))
 
 
 def test_declining_the_safety_check_moves_nothing_and_writes_nothing(device, scale, runs_directory, monkeypatch):

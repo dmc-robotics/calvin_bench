@@ -97,15 +97,12 @@ class Session:
             wait_until_cool(self.drive)
             self._rest()
             hold = self._next_hold()
-            signals, scale_samples, odrive_samples = self._hold(hold, direction, approach, torque_Nm)
+            signals, scale_samples, largest_feed_gap_s = self._hold(hold, direction, approach, torque_Nm)
             temperatures = self.drive.temperatures()
-            self.run.append("scale", *scale_samples)
-            self.run.append("odrive", *odrive_samples)
             reading = self._reading(scale_samples, label, allow_repeat=True)
             if reading is not console.REPEAT:
                 break
         self.run.append("data", measurement(hold, direction, approach, torque_Nm, reading, temperatures, signals))
-        largest_feed_gap_s = max(sample.feed_gap_s for sample in odrive_samples)
         print(f"  {label}: {reading}, Iq {signals.iq_measured_A:+.2f} A, {temperatures}, feed gap ≤ {1000 * largest_feed_gap_s:.0f} ms")
 
     def _next_hold(self):
@@ -114,11 +111,13 @@ class Session:
         return hold
 
     def _hold(self, hold, direction, approach, torque_Nm):
-        """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout.
-        Returns (Signals averaged over the last sample_s, ScaleSamples, ODriveSamples)."""
+        """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout. Every balance
+        reading and ODrive tick goes to scale.csv and odrive.csv, even if the hold aborts.
+        Returns (Signals averaged over the last sample_s, ScaleSamples, the largest gap between watchdog feeds)."""
         settings = self.settings
         weights = []
         ticks = []
+        started_at = None
 
         def poll_scale():
             now = time.monotonic()
@@ -130,27 +129,27 @@ class Session:
         try:
             with self.drive.armed():
                 if approach == "above":
-                    ticks += self.drive.apply(torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s, during)
+                    self.drive.apply(torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s, during, ticks)
                 started_at = time.monotonic()
-                ticks += self.drive.apply(torque_Nm, settings.hold_s, during)
+                self.drive.apply(torque_Nm, settings.hold_s, during, ticks)
         finally:
             self._last_hold_end = time.monotonic()
+            if started_at is None:  # aborted before the level's torque went on: time from the abort
+                started_at = self._last_hold_end
+            scale_samples = [
+                ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable, weight.net)
+                for when, weight in weights
+            ]
+            self.run.append("scale", *scale_samples)
+            self.run.append("odrive", *(
+                ODriveSample(hold, direction, approach, torque_Nm, round(tick.time_s - started_at, 3), round(tick.feed_gap_s, 4), *tick[2:])
+                for tick in ticks
+            ))
         window_start = started_at + settings.hold_s - settings.sample_s
         if not (window := [tick for tick in ticks if tick.time_s >= window_start]):
             raise BenchError(f"No ODrive readings in the last {settings.sample_s} s of the hold: sample_s is shorter than the hold loop's tick.")
         signals = Signals(*(statistics.fmean(getattr(tick, name) for tick in window) for name in Signals._fields))
-        scale_samples = [
-            ScaleSample(hold, direction, approach, torque_Nm, round(when - started_at, 3), weight.value, weight.stable, weight.net)
-            for when, weight in weights
-        ]
-        odrive_samples = [
-            ODriveSample(
-                hold, direction, approach, torque_Nm, round(tick.time_s - started_at, 3), round(tick.feed_gap_s, 4),
-                tick.position_rev, tick.velocity_rev_per_s, tick.iq_setpoint_A, tick.iq_measured_A, tick.vbus_V,
-            )
-            for tick in ticks
-        ]
-        return signals, scale_samples, odrive_samples
+        return signals, scale_samples, max(tick.feed_gap_s for tick in ticks)
 
     def _reading(self, samples, label, allow_repeat=False):
         """The reading from the balance's samples, or a typed one without a scale (console.REPEAT if they typed r).

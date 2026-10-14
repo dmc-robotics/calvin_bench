@@ -54,6 +54,7 @@ class FakeAxis:
         self.slip_after_reads = None  # the shaft moves after this many position reads
         self.refuses_closed_loop = False
         self.watchdog_tripped = False
+        self.watchdog_trips = 0  # never reset, unlike watchdog_tripped
         self._position_reads = 0
         self._last_feed = None
         self._requested_state = AxisState.IDLE
@@ -79,6 +80,7 @@ class FakeAxis:
     def requested_state(self, state):
         if state == AxisState.CLOSED_LOOP_CONTROL:
             self.arm_count += 1
+        self._check_watchdog()
         self.watchdog_tripped = False
         self._requested_state = state
 
@@ -107,8 +109,10 @@ class FakeAxis:
     def _check_watchdog(self):
         """Like the ODrive: in closed loop, a feed gap longer than watchdog_timeout idles the axis until the next request."""
         closed_loop = self._requested_state == AxisState.CLOSED_LOOP_CONTROL
-        if closed_loop and self._last_feed is not None and time.monotonic() - self._last_feed > self.config.watchdog_timeout:
+        expired = self._last_feed is not None and time.monotonic() - self._last_feed > self.config.watchdog_timeout
+        if closed_loop and expired and not self.watchdog_tripped:
             self.watchdog_tripped = True
+            self.watchdog_trips += 1
 
 
 class FakeDevice:

@@ -99,6 +99,14 @@ def test_apply_is_refused_outside_armed(device):
     assert all(torque == 0 for torque in device.axis0.torque_log)
 
 
+def test_ticks_passed_in_are_kept_when_the_hold_aborts(device):
+    device.axis0.slip_after_reads = 4
+    ticks = []
+    with ODriveUsb.connect("left", 0.25) as drive, pytest.raises(BenchError, match="shaft moved"), drive.armed():
+        drive.apply(0.1, 0.5, ticks=ticks)
+    assert ticks[-1].position_rev == 1.0  # the reading that tripped the check is kept too
+
+
 def test_shaft_speed_aborts_and_ends_idle(device):
     with ODriveUsb.connect("left", 0.25) as drive:
         with pytest.raises(BenchError, match="shaft moved"), drive.armed():
@@ -137,7 +145,7 @@ def test_ctrl_c_mid_hold_ends_idle_with_the_velocity_limit_restored(device):
 
 def test_a_callback_slower_than_a_tick_doesnt_add_the_ticks_sleep(device):
     def slow_scale():
-        time.sleep(0.035)  # with a fixed 0.02 s sleep on top, past half the 0.1 s timeout
+        time.sleep(0.03)  # with a fixed 0.02 s sleep on top, at half the 0.1 s timeout
 
     with ODriveUsb.connect("left", 0.25) as drive, drive.armed():
         ticks = drive.apply(0.1, 0.2, during=slow_scale)
@@ -152,7 +160,7 @@ def test_a_blocking_callback_aborts_before_the_watchdog_trips(device):
         with pytest.raises(BenchError, match="between watchdog feeds"), drive.armed():
             drive.apply(0.1, 0.5, during=blocking_scale)
         assert device.axis0.is_idle
-    assert not device.axis0.watchdog_tripped
+    assert device.axis0.watchdog_trips == 0
 
 
 def test_the_fake_watchdog_trips_on_a_gap_the_driver_misses(device, monkeypatch):
@@ -165,6 +173,7 @@ def test_the_fake_watchdog_trips_on_a_gap_the_driver_misses(device, monkeypatch)
         with pytest.raises(BenchError, match="closed loop"), drive.armed():
             drive.apply(0.1, 0.1, during=blocking_scale)
         assert device.axis0.is_idle
+    assert device.axis0.watchdog_trips == 1
 
 
 def test_arming_refuses_to_continue_if_the_axis_isnt_in_closed_loop(device):

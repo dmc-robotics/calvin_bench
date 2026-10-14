@@ -28,6 +28,10 @@ def test_bad_settings_are_refused(changes, problem):
     assert problem in str(error.value)
 
 
+def test_a_level_plus_overshoot_at_the_max_torque_is_allowed_despite_float_rounding():
+    Settings("left", 0.2, levels_Nm=(0.05, 0.075, 0.1), from_above=True, max_torque_Nm=0.15)  # 0.1 + 0.05 = 0.15000000000000002
+
+
 def test_every_problem_is_listed():
     with pytest.raises(BenchError) as error:
         Settings("middle", 200, sample_s=0)

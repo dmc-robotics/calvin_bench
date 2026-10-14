@@ -1,4 +1,6 @@
 """Synthetic data.csv rows with known k, offset and stiction; the analysis must recover them."""
+from dataclasses import replace
+
 import pytest
 
 from bench import units
@@ -107,3 +109,16 @@ def test_a_run_with_no_complete_direction_raises(tmp_path):
     incomplete = [m for m in make_measurements() if m.approach != "tare"]
     with pytest.raises(BenchError, match="No complete direction"):
         fit(tmp_path, incomplete)
+
+
+def test_counts_only_the_from_below_levels_toward_a_complete_direction(tmp_path):
+    two_below = [m for m in make_measurements(from_above=True) if m.approach != "below" or abs(m.torque_command_Nm) < 0.11]
+    with pytest.raises(BenchError, match="No complete direction"):
+        fit(tmp_path, two_below)
+
+
+def test_a_held_level_without_iq_is_refused(tmp_path):
+    measurements = make_measurements()
+    measurements[1] = replace(measurements[1], iq_setpoint_A=None)
+    with pytest.raises(BenchError, match="holds 1 have no iq_setpoint_A"):
+        fit(tmp_path, measurements)

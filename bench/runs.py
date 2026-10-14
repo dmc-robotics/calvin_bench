@@ -1,12 +1,11 @@
-"""Run folders: runs/<timestamp>_<experiment>_<motor>/ holding meta.json, CSV tables and JSON files, finished.json
-once the recording ended normally (an aborted run has none), and code.diff when it was recorded with uncommitted changes.
+"""Run folders: runs/<timestamp>_<experiment>_<motor>/ holding meta.json, CSV tables and JSON files, and finished.json
+once the recording ended normally (an aborted run has none).
 
 The only code that reads or writes run folders. Rows go in as dataclasses (their fields are the CSV columns)
 and come back as the same dataclasses.
 """
 import csv
 import json
-import subprocess
 import typing
 from dataclasses import asdict, fields
 from datetime import datetime
@@ -14,8 +13,7 @@ from pathlib import Path
 
 from bench.errors import BenchError
 
-REPOSITORY = Path(__file__).resolve().parent.parent
-RUNS_DIRECTORY = REPOSITORY / "runs"
+RUNS_DIRECTORY = Path(__file__).resolve().parent.parent / "runs"
 
 
 class Run:
@@ -25,17 +23,11 @@ class Run:
     @classmethod
     def create(cls, experiment, motor, meta):
         """A new run folder with meta.json: `experiment` and `motor` (which `bench analyze` dispatches on), when it
-        started, the code that recorded it, then `meta`. Uncommitted changes to that code go in code.diff."""
+        started, then `meta`."""
         started = datetime.now().astimezone()
         run = cls(RUNS_DIRECTORY / f"{started:%Y-%m-%d_%H%M%S}_{experiment}_{motor}")
         run.directory.mkdir(parents=True)
-        diff = git("diff", "HEAD")
-        if diff:
-            run.path("code.diff").write_text(diff)
-        code = {"commit": git("rev-parse", "HEAD").strip(), "uncommitted_changes": bool(diff)}
-        run.write_json("meta", {
-            "experiment": experiment, "motor": motor, "started_at": started.isoformat(timespec="seconds"), "code": code, **meta,
-        })
+        run.write_json("meta", {"experiment": experiment, "motor": motor, "started_at": started.isoformat(timespec="seconds"), **meta})
         return run
 
     @property
@@ -52,7 +44,7 @@ class Run:
 
     def finish(self):
         """Mark the recording as ended normally, so batch analyses can skip aborted runs."""
-        self.write_json("finished", {"finished_at": datetime.now().isoformat(timespec="seconds")})
+        self.write_json("finished", {"finished_at": datetime.now().astimezone().isoformat(timespec="seconds")})
 
     def path(self, filename):
         return self.directory / filename
@@ -91,10 +83,6 @@ class Run:
         if not (path := self.path(filename)).exists():
             raise BenchError(f"{self.directory} has no {filename}.")
         return path
-
-
-def git(*arguments):
-    return subprocess.run(["git", "-C", str(REPOSITORY), *arguments], capture_output=True, text=True, check=True).stdout
 
 
 def cell(text, field_type, where):
