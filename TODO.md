@@ -8,6 +8,7 @@ _Review of 2026-10-13. Item IDs (H1, M3, …) are for reference in questions. Do
 
 - [ ] **Hold index column** (M3): add a `hold` column to `data.csv` and `scale.csv`, so a repeated hold's scale samples can be told apart and linked to their measurement row. This changes the CSV format.
 - [ ] **Delete Python stubs** (Low): remove `bench/waveforms.py`, `bench/hardware/link.py` and the unused `scipy` dependency until M3. PLAN already describes them.
+- [x] **Split `hold()`** (H2): the driver keeps the safety (`armed()` context + `apply(torque_Nm, seconds, during)`); the profile, overshoot, sampling window and averaging move to static-gain's procedure. Done in step 2.
 - [ ] **Typed run reader** (M1): approve `Run.rows(table, RowType)` returning dataclasses. For the 1 kHz data at M3, choosing between numpy structured arrays and pandas is a separate decision.
 
 ## Steps
@@ -22,11 +23,14 @@ Why: drivers, a parser, a dataclass and the pure analysis each call `SystemExit`
 - [x] Tests: change `pytest.raises(SystemExit)` to `BenchError`, and add a test that an incomplete run raises `BenchError`.
 
 ### 2. H2: make the safe path the only path
-Why: a procedure currently has to call `connect()`, then `require_ready()`, then `velocity_cap_for()`, then `velocity_limited()`. Forgetting either of the middle two leaves the motor unchecked or uncapped, which contradicts the driver's own docstring.
-- [ ] `ODriveUsb.connect(motor, highest_torque_Nm)` finds the ODrive, idles it, runs the checks (raising before anything changes), lowers `vel_limit` and yields. On exit it restores `vel_limit` and idles.
-- [ ] Expose `velocity_cap_rev_per_s` as an attribute for `meta.json`. Make `velocity_limited` and `velocity_cap_for` private.
-- [ ] Remove the bare getter calls in `require_ready` (`odrive_usb.py:112–115`). If you want the early read, make it one named method instead.
-- [ ] Update `procedure.py:38–40,58` and `tests/test_odrive_usb.py`. The safety tests keep their intent: idle on exit, wrong ODrive moves nothing, `vel_limit` restored.
+Why: a procedure currently has to call `connect()`, then `require_ready()`, then `velocity_cap_for()`, then `velocity_limited()`. Forgetting either of the middle two leaves the motor unchecked or uncapped. That breaks the CLAUDE.md layering: `odrive_usb.py` owns motor safety, config checks included, and procedures have no safety logic of their own.
+- [x] `ODriveUsb.connect(motor, highest_torque_Nm)` finds the ODrive, idles it, runs the checks (raising before anything changes), lowers `vel_limit` and yields. On exit it restores `vel_limit` and idles.
+- [x] Expose `velocity_cap_rev_per_s` as an attribute for `meta.json`. `velocity_cap_for` is private; `velocity_limited` is folded into `connect` (idle first, then restore).
+- [x] Remove the bare getter calls in `require_ready` (`odrive_usb.py:112–115`). The early read is now one named method, `_read_every_property_used()`.
+- [x] Torque guard: `connect` stores `highest_torque_Nm`. `apply()` raises `BenchError` for a larger torque before setting it, because above it the cap and the `current_soft_max` check no longer hold and the data would be silently clipped. Test: an over-limit torque raises and is never commanded.
+- [x] Split `hold()` into `armed()` + `apply()` in the driver; the overshoot, sampling window and averaging move to `procedure.py`.
+- [x] `apply()` times each `during()` call and raises `BenchError` if one takes longer than `DURING_LIMIT_S` (the shortest allowed watchdog timeout).
+- [x] Update `procedure.py:38–40,58` and `tests/test_odrive_usb.py`. The safety tests keep their intent: idle on exit, wrong ODrive moves nothing, `vel_limit` restored.
 
 ### 3. M4: validation and defaults in one place
 Why: validation is split across argparse types, `Settings.__post_init__` and the driver. A `Settings` built in code skips the argparse checks, and nothing checks `0 < sample_s ≤ hold_s` (an empty average fails after the hold).
@@ -60,7 +64,7 @@ Why: rows are written as dataclasses but read back as `dict[str, str]`. So the "
 - [ ] Trim module docstrings that repeat the layout (`static_gain/__init__.py:4–7`, `procedure.py:3–4`, `experiments/__init__.py`). The layout belongs in CLAUDE.md.
 - [ ] H3 wording: in `experiments/__init__.py`, CLAUDE.md ("same shape") and PLAN's Python layout row, make the **entry points** the contract (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`) and the four-file split optional.
 - [ ] Import `TORQUE_CONSTANT_NMA` from `tests/fakes.py` instead of repeating it in `test_static_gain_analysis.py:10`.
-- [ ] Rename the procedure's `odrive` variable to `drive`, so it doesn't share a name with the `odrive` library used in `odrive_usb.py`.
+- [x] Rename the procedure's `odrive` variable to `drive` (done in step 2), so it doesn't share a name with the `odrive` library used in `odrive_usb.py`.
 - [ ] _(If decided)_ Delete the Python stubs and `scipy`.
 
 ## M3 design notes (record in PLAN.md Decisions, don't build yet)

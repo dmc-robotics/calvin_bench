@@ -50,6 +50,7 @@ def test_record_then_analyze_recovers_k(device, scale, runs_directory, monkeypat
     assert meta["experiment"] == "static-gain"
     assert meta["settings"]["arm_length_m"] == ARM_LENGTH_M
     assert meta["odrive"]["node_id"] == 1
+    assert meta["velocity_cap_rev_per_s"] == pytest.approx(1.5 * max(DEFAULT_LEVELS_NM) / device.axis0.controller.config.vel_gain)
     assert meta["scale"]["balance_id"] == "FAKE"
     assert run.read_json("odrive_config") == {"fake": True}
     assert len(run.rows("data")) == 2 * (2 + len(DEFAULT_LEVELS_NM))

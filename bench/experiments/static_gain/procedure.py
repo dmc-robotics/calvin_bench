@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 
 from bench import console
 from bench.experiments.static_gain.data import DIRECTIONS, EXPERIMENT, Measurement, ScaleSample
-from bench.hardware.odrive_usb import ODriveUsb
+from bench.hardware.odrive_usb import ODriveUsb, Signals
 from bench.hardware.scale import Scale
 from bench.runs import Run
 
@@ -35,10 +35,8 @@ def record(settings):
     if scale:
         print(f"Scale {scale.balance_id} (firmware {scale.firmware}) on {scale.port}.")
     print("Connecting to the ODrive over USB...")
-    with scale or nullcontext(), ODriveUsb.connect() as odrive:
-        odrive.require_ready(settings.motor, settings.highest_torque_Nm)
-        velocity_cap = odrive.velocity_cap_for(settings.highest_torque_Nm)
-        identity = odrive.identity()
+    with scale or nullcontext(), ODriveUsb.connect(settings.motor, settings.highest_torque_Nm) as drive:
+        identity = drive.identity()
         print(
             f"ODrive {identity['serial']}, node {identity['node_id']} ({settings.motor}). "
             f"Levels {', '.join(f'{level:.3f}' for level in settings.levels_Nm)} N·m, each held {settings.hold_s} s, both directions."
@@ -48,21 +46,20 @@ def record(settings):
         run = Run.create(EXPERIMENT, settings.motor, {
             "settings": asdict(settings),
             "odrive": identity,
-            "velocity_cap_rev_per_s": velocity_cap,
+            "velocity_cap_rev_per_s": drive.velocity_cap_rev_per_s,
             "scale": scale.identity() if scale else "manual",
         })
-        run.write_json("odrive_config", odrive.config())
+        run.write_json("odrive_config", drive.config())
         print(f"Recording to {run.directory}")
 
-        recorder = Recorder(settings, odrive, scale, run)
-        with odrive.velocity_limited(velocity_cap):
-            for direction, sign in DIRECTIONS.items():
-                console.confirm(f"\n{direction.capitalize()} direction: scale placed so {direction} torque pushes the arm onto it?")
-                recorder.tare(direction)
-                for approach in settings.approaches:
-                    for level in settings.levels_Nm:
-                        recorder.level(direction, approach, sign * level)
-                recorder.tare(direction, again=True)
+        recorder = Recorder(settings, drive, scale, run)
+        for direction, sign in DIRECTIONS.items():
+            console.confirm(f"\n{direction.capitalize()} direction: scale placed so {direction} torque pushes the arm onto it?")
+            recorder.tare(direction)
+            for approach in settings.approaches:
+                for level in settings.levels_Nm:
+                    recorder.level(direction, approach, sign * level)
+            recorder.tare(direction, again=True)
 
     print(f"\nDone. Analyze with: bench analyze {run.directory}")
 
@@ -70,9 +67,9 @@ def record(settings):
 class Recorder:
     """The steps of one recording, writing a row for each. Keeps the rest timer between holds."""
 
-    def __init__(self, settings, odrive, scale, run):
+    def __init__(self, settings, drive, scale, run):
         self.settings = settings
-        self.odrive = odrive
+        self.drive = drive
         self.scale = scale
         self.run = run
         self._last_hold_end = -math.inf
@@ -89,7 +86,7 @@ class Recorder:
                 for time_s, weight in self.scale.sample(self.settings.hold_s)
             ]
         reading = self._reading(samples, label)
-        self.run.append("data", measurement(direction, "tare", 0.0, reading, self.odrive.temperatures()))
+        self.run.append("data", measurement(direction, "tare", 0.0, reading, self.drive.temperatures()))
         print(f"  {label}: {reading}")
 
     def level(self, direction, approach, torque_Nm):
@@ -97,37 +94,41 @@ class Recorder:
         label = f"{torque_Nm:+.3f} N·m ({approach})"
         reading = None
         while reading is None:
-            temperatures = wait_until_cool(self.odrive)
+            temperatures = wait_until_cool(self.drive)
             self._rest()
-            hold, samples = self._hold(direction, approach, torque_Nm)
+            signals, samples = self._hold(direction, approach, torque_Nm)
             reading = self._reading(samples, label, allow_repeat=True)
-        self.run.append("data", measurement(direction, approach, torque_Nm, reading, temperatures, hold.signals))
-        print(f"  {label}: {reading}, Iq {hold.signals.iq_measured_A:+.2f} A, {temperatures}")
+        self.run.append("data", measurement(direction, approach, torque_Nm, reading, temperatures, signals))
+        print(f"  {label}: {reading}, Iq {signals.iq_measured_A:+.2f} A, {temperatures}")
 
     def _hold(self, direction, approach, torque_Nm):
-        """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout. Returns (Hold, ScaleSamples)."""
+        """Hold `torque_Nm`, from above first if `approach` says so, polling the balance throughout.
+        Returns (Signals averaged over the last sample_s, ScaleSamples)."""
         settings = self.settings
-        profile = [(torque_Nm, settings.hold_s)]
-        if approach == "above":
-            profile.insert(0, (torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s))
-
         weights = []
 
         def poll_scale():
             now = time.monotonic()
             weights.extend((now, weight) for weight in self.scale.poll())
 
+        during = poll_scale if self.scale else None
         if self.scale:
             self.scale.clear()
         try:
-            hold = self.odrive.hold(profile, settings.sample_s, during=poll_scale if self.scale else None)
+            with self.drive.armed():
+                if approach == "above":
+                    self.drive.apply(torque_Nm + math.copysign(settings.overshoot_Nm, torque_Nm), settings.overshoot_s, during)
+                started_at = time.monotonic()
+                ticks = self.drive.apply(torque_Nm, settings.hold_s, during)
         finally:
             self._last_hold_end = time.monotonic()
+        window_start = started_at + settings.hold_s - settings.sample_s
+        signals = Signals(*map(statistics.fmean, zip(*(signals for when, signals in ticks if when >= window_start))))
         samples = [
-            ScaleSample(direction, approach, torque_Nm, round(when - hold.final_started_at, 3), weight.grams, weight.stable)
+            ScaleSample(direction, approach, torque_Nm, round(when - started_at, 3), weight.grams, weight.stable)
             for when, weight in weights
         ]
-        return hold, samples
+        return signals, samples
 
     def _reading(self, samples, label, allow_repeat=False):
         """The settled reading from the balance's samples, or a typed one when there's no scale or too few samples.
@@ -159,8 +160,8 @@ def settle(samples, window_start_s, minimum):
     )
 
 
-def wait_until_cool(odrive):
-    while (temperatures := odrive.temperatures()).too_hot:
+def wait_until_cool(drive):
+    while (temperatures := drive.temperatures()).too_hot:
         console.pause(f"Too hot ({temperatures}). Let it cool.")
     return temperatures
 
