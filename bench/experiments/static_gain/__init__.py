@@ -5,7 +5,7 @@ A lever arm on the motor shaft pushes on the OHAUS balance while the ODrive hold
 from dataclasses import asdict, replace
 
 from bench.experiments.static_gain import analysis, procedure, report
-from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Measurement, Settings
+from bench.experiments.static_gain.data import DEFAULT_ARM_LENGTH_M, DEFAULT_LEVELS_NM, DEFAULT_MAX_TORQUE_NM, NAME, Measurement, Settings
 from bench.motors import NODE_IDS
 
 # Safe to hard-code: macOS names the port after the serial number of the FTDI chip inside the balance,
@@ -16,7 +16,10 @@ DESCRIPTION = "experiment 2: static torque gain (lever arm + scale), over the OD
 
 def add_arguments(parser):
     parser.add_argument("--motor", required=True, choices=list(NODE_IDS))
-    parser.add_argument("--arm-length", type=float, required=True, help="shaft center to scale contact (m)")
+    parser.add_argument(
+        "--arm-length", type=float, default=DEFAULT_ARM_LENGTH_M,
+        help="shaft center to scale contact, m (default: %(default)s)",
+    )
     parser.add_argument(
         "--levels", type=levels, default=DEFAULT_LEVELS_NM,
         help="comma-separated torque magnitudes, N·m motor-side (default: %(default)s)",

@@ -24,10 +24,10 @@ Each experiment has step-by-step instructions in [`instructions/`](instructions/
 **Record** a run into a new folder under `runs/`:
 
 ```sh
-uv run bench record static-gain --motor left --arm-length 0.200
-```
+uv run bench record static-gain --motor left
 
-`uv run bench record <experiment> --help` lists an experiment's options. Static gain, for example, takes `--levels`, `--from-above`, `--max-torque`, and `--scale <port>` or `--no-scale` to type the balance readings by hand.
+```
+`uv run bench record <experiment> --help` lists an experiment's options. Static gain, for example, takes `--arm-length` (default 0.200 m), `--levels`, `--from-above`, `--max-torque`, and `--scale <port>` or `--no-scale` to type the balance readings by hand.
 
 **Analyze** a run. Its `meta.json` says which experiment it was; the results (`results.json`, `plot.png`) are written into the run folder:
 

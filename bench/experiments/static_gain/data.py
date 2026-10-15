@@ -8,6 +8,7 @@ from bench.motors import NODE_IDS
 
 NAME = "static-gain"
 DIRECTIONS = {"positive": 1.0, "negative": -1.0}
+DEFAULT_ARM_LENGTH_M = 0.200
 DEFAULT_LEVELS_NM = (0.05, 0.10, 0.15, 0.20, 0.25)
 DEFAULT_MAX_TORQUE_NM = 0.25
 MINIMUM_LEVELS = 3  # for a line fit

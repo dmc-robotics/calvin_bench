@@ -28,14 +28,14 @@ So G ≈ 4, and the experiment tells you how far from 4.
 1. **Balance:** switch it on at least an hour ahead (the manual's warm-up for best accuracy) and set it to grams. On its touchscreen: Auto Tare, Auto Off and Auto Standby off (a balance that tares itself or sleeps mid-run spoils or stops the run); Communication > Print Settings > Print Output: Output Format OHAUS, Numeric Value Only off. The script turns any auto-print off when it connects.
 2. Clamp the arm so it sticks out horizontally. It must not slip.
 3. Put the scale under the arm's tip so the arm rests on it when level. Use a narrow contact point (a bolt head or an edge) so the length is well defined.
-4. Measure `L`, from the shaft (or axle) center to the contact point, in meters.
+4. Measure `L`, from the shaft (or axle) center to the contact point, in meters. The script assumes 0.200 m; pass `--arm-length` if yours differs.
 5. With the motor idle, the scale reads the **tare**, the arm's resting weight. The script reads it; don't zero the balance with the arm on it, or its auto-zero tracking can creep the near-zero readings.
 
 ## Procedure
 Recorded with `bench record static-gain`. It talks to the ODrive over USB, so close `odrivetool` first.
 
 ```sh
-bench record static-gain --motor left --arm-length 0.200
+bench record static-gain --motor left
 ```
 
 It reads the balance on `/dev/cu.usbserial-DN04KNBY`, named after the balance's own USB chip, so it doesn't change; `--scale <port>` overrides it. Set the balance to grams. With `--no-scale`, the script asks you to type each reading instead.
