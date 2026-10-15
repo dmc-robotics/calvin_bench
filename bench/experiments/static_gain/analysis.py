@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from bench import units
+from bench import motors, units
 from bench.errors import BenchError
 from bench.experiments.static_gain.data import DIRECTIONS, MINIMUM_LEVELS
 
@@ -71,7 +71,7 @@ def fit(rows, arm_length_m, torque_constant_NmA, minimum_scale_readings=None):
     k = float(np.mean([direction_fit.result.k for direction_fit in fits.values()]))
     results = Results(
         k=k,
-        G=units.BELT_RATIO * k,
+        G=motors.BELT_RATIO * k,
         torque_constant_configured_NmA=torque_constant_NmA,
         torque_constant_expected_NmA=k * torque_constant_NmA,
         asymmetry_percent=100 * abs(fits["positive"].result.k - fits["negative"].result.k) / k if len(fits) == 2 else None,

@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from bench import units
+from bench import motors, units
 from bench.errors import BenchError
 from bench.experiments.static_gain import analysis
 from bench.experiments.static_gain.data import DEFAULT_LEVELS_NM, DIRECTIONS, Measurement
@@ -64,7 +64,7 @@ def test_recovers_k_offset_and_g(tmp_path):
         assert result.static_friction_Nm is None
     k = (K["positive"] + K["negative"]) / 2
     assert results.k == pytest.approx(k)
-    assert results.G == pytest.approx(units.BELT_RATIO * k)
+    assert results.G == pytest.approx(motors.BELT_RATIO * k)
     assert results.asymmetry_percent == pytest.approx(100 * abs(K["positive"] - K["negative"]) / k)
     assert results.warnings == []
 

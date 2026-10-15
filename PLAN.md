@@ -38,7 +38,7 @@ Each is a small slice you can see working on the bench.
 - **Done when:** a torque step plays and streams a sensible CSV with µs timestamps.
 
 ### M3 — Python `bench` CLI (minimum)
-- `bench/`: the Teensy link (`hardware/link.py`), waveform generators (step, staircase, chirp, PRBS, multi-sine), one experiment package per waveform experiment (see Python layout). Conversion from ODrive units to SI / wheel side happens in one place on the host.
+- `bench/`: the Teensy link (`hardware/link.py`), waveform generators (step, staircase, chirp, PRBS, multi-sine), one experiment package per waveform experiment (see Python layout). Conversion from ODrive units to SI happens on the host (`units.py`); the belt ratio is in `motors.py`.
 - **Done when:** `bench record step --motor left --torque 0.1 --duration 2` creates a run folder and `bench analyze` plots it.
 
 ### M4 — Second motor + timing check
@@ -100,7 +100,7 @@ Step-by-step instructions for each one: [`instructions/`](instructions/README.md
 | Python layout | Layers kept apart: `hardware/` drivers (the ODrive driver owns motor safety), `experiments/<name>/` packages (the contract is the entry points the CLI calls; static-gain splits into `data`, `procedure`, `analysis`, `report`), `runs.py` (run folders), `console.py` (prompts). Details in CLAUDE.md |
 | Balance driver | `OhausAdventurer` is self-contained (pyserial only, its own `OhausError`) so other projects can copy the file. It covers the AX manual's whole command table, checked against the real AX8201/E (2026-10-14). Experiment 2 holds 3 s so its averaged last second starts 0.5 s after the balance's typical 1.5 s settling |
 | Motor sign | All bench data is in the **raw ODrive sign**, whether recorded over USB (experiment 2) or CAN (bench sketch, `direction` +1). Per-direction results (k₊/k₋, τ_c, stiction) are labeled in that sign. `bench export` applies each motor's mounting sign (positive = robot forward, determined physically) once, when writing `actuator.yaml` |
-| Torque units through analysis | `units.py` does exact conversions only (rev→rad, motor→wheel angle and speed by `BELT_RATIO`). Torques stay in commanded motor-side N·m through every analysis; the measured G from experiment 2 is applied once, in `bench export` |
+| Torque units through analysis | `units.py` does exact unit conversions only (rev→rad); motor→wheel angle and speed use `motors.BELT_RATIO`, a property of the drive unit. Torques stay in commanded motor-side N·m through every analysis; the measured G from experiment 2 is applied once, in `bench export` |
 
 ## Decision log (why)
 

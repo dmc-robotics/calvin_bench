@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bench import units
+from bench import motors
 
 COLORS = {"positive": "#2a78d6", "negative": "#eb6834"}
 
@@ -23,7 +23,7 @@ def print_report(run_name, arm_length_m, results):
         print(f"k = {results.k:.3f}  (single direction only)")
     else:
         print(f"k = {results.k:.3f}  (asymmetry {results.asymmetry_percent:.1f}%)")
-    print(f"G = {units.BELT_RATIO:g} × k = {results.G:.3f}")
+    print(f"G = {motors.BELT_RATIO:g} × k = {results.G:.3f}")
     print(
         f"Kt expected k × {results.torque_constant_configured_NmA:.4f} (configured)"
         f" = {results.torque_constant_expected_NmA:.4f} N·m/A"

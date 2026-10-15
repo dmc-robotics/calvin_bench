@@ -12,7 +12,7 @@ def test_the_defaults_are_valid():
 @pytest.mark.parametrize("changes, problem", [
     ({"motor": "middle"}, "motor is 'middle'"),
     ({"arm_length_m": 0}, "arm_length_m is 0"),
-    ({"arm_length_m": 200}, "in meters"),
+    ({"arm_length_m": 200}, "less than 1"),
     ({"levels_Nm": (0.05, -0.1, 0.15)}, "expected positive torque magnitudes"),
     ({"levels_Nm": (0.05, 0.1, 0.1)}, "at least 3 distinct levels"),
     ({"max_torque_Nm": float("nan")}, "max_torque_Nm is nan"),
@@ -36,5 +36,5 @@ def test_every_problem_is_listed():
     with pytest.raises(BenchError) as error:
         Settings("middle", 200, sample_s=0)
     message = str(error.value)
-    for problem in ("motor is", "in meters", "sample_s is 0"):
+    for problem in ("motor is", "less than 1", "sample_s is 0"):
         assert problem in message

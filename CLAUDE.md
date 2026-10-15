@@ -24,7 +24,11 @@ calvin_bench/
 - The bench sketch uses `InstinctusCore` (in `../calvin_instinctus/InstinctusCore/`, symlinked into `~/code/arduino/libraries/`) for the ODrive CAN driver, safety supervisor and recorder. Bench-only pieces (waveform player, USB text protocol) live in `firmware/bench/src/`.
 - Build and flash: `cd firmware/bench && grot build && grot load`. Rebuild after any `InstinctusCore` edit.
 - Teensy RAM holds only ~6 s of 1 kHz two-motor data, so the sketch **streams samples to the host during a run** rather than storing whole runs.
+<<<<<<< old
 - ODrive CAN protocol: https://docs.odriverobotics.com/v/latest/manual/can-protocol.html. Arbitration ID = `node_id << 5 | cmd_id`; little-endian float32 payloads. Firmware keeps ODrive's units; **all conversion to SI and wheel side happens in `bench/units.py`**.
+=======
+- ODrive CAN protocol: https://docs.odriverobotics.com/v/latest/manual/can-protocol.html. Arbitration ID = `node_id << 5 | cmd_id`; little-endian float32 payloads. Firmware keeps ODrive's units; conversion to SI happens on the host (`bench/units.py`). The belt ratio is a property of the drive unit, so it lives in `bench/motors.py`, not with the unit conversions.
+>>>>>>> new
 
 ## Python
 
@@ -33,7 +37,7 @@ calvin_bench/
 - Layers, each with one job; keep them apart:
   - `bench/hardware/`: drivers, each module and class named for its hardware ("scale" stays the generic word and variable name). `odrive_usb.py` owns motor safety (idle on every exit, watchdog fed, motion abort, config checks); `ohaus_adventurer.py` is the balance; `link.py` the Teensy (M3).
   - `bench/experiments/<name>/`: one package per experiment. Its contract is the entry points the CLI calls (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`; see `bench/experiments/__init__.py`); how it splits into files is up to it. 
-  - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
+  - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` holds unit conversions; `bench/motors.py` holds facts about the drive units (CAN node IDs, belt ratio).
 - New experiment: add a package with those entry points and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
 
 ## Experiments
