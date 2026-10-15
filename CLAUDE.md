@@ -31,37 +31,27 @@ calvin_bench/
 - Python 3.15 (`.python-version`), managed with uv: `uv sync`, then `uv run bench --help`. Tests: `uv run pytest`.
 - Commands: `bench record <experiment> ...` writes a run folder; `bench analyze <run folder>` picks the analysis from its `meta.json`.
 - Layers, each with one job; keep them apart:
-<<<<<<< old
-  - `bench/hardware/`: drivers. `odrive_usb.py` owns motor safety (idle on every exit, watchdog fed, motion abort, config checks); `scale.py` is the balance; `link.py` the Teensy (M3).
-=======
   - `bench/hardware/`: drivers, each module and class named for its hardware ("scale" stays the generic word and variable name). `odrive_usb.py` owns motor safety (idle on every exit, watchdog fed, motion abort, config checks); `ohaus_adventurer.py` is the balance; `link.py` the Teensy (M3).
->>>>>>> new
-<<<<<<< old
-  - `bench/experiments/<name>/`: one package per experiment, entry points listed in `bench/experiments/__init__.py`. Inside: `data.py` (Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns), `procedure.py` (the steps; no safety logic of its own), `analysis.py` (pure: rows in, results with warnings out), `report.py` (printing, plots).
-  - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
-- New experiment: add a package with the same shape and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
-=======
-  - `bench/experiments/<name>/`: one package per experiment. Its contract is the entry points the CLI calls (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`; see `bench/experiments/__init__.py`); how it splits into files is up to it. Static-gain uses `data.py` (Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns), `procedure.py` (the steps; no safety logic of its own), `analysis.py` (pure: rows in, results with warnings out), `report.py` (printing, plots).
+  - `bench/experiments/<name>/`: one package per experiment. Its contract is the entry points the CLI calls (`NAME`, `DESCRIPTION`, `add_arguments`, `record`, `analyze`; see `bench/experiments/__init__.py`); how it splits into files is up to it. 
   - `bench/runs.py` is the only code that touches run folders; `bench/console.py` asks every question; `bench/units.py` does every unit conversion.
 - New experiment: add a package with those entry points and list it in `bench/cli.py`. Add tests against `tests/fakes.py`.
->>>>>>> new
 
-## Scale (experiment 2)
+## Experiments
+See `instructions` for details. 
 
-<<<<<<< old
-OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `bench/hardware/scale.py`, standalone so other experiments can use the balance.
-=======
-OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `OhausAdventurer` in `bench/hardware/ohaus_adventurer.py`. It's self-contained (pyserial only, raises `OhausError`, which the CLI catches next to `BenchError`) so other projects can copy it; keep it free of `bench` imports. It covers the manual's whole command table; its docstring lists every reply, probed on the real balance 2026-10-14. The manual and datasheet are in `docs/`.
->>>>>>> new
-<<<<<<< old
-- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_PORT`), 9600 baud, 8N1.
-- ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` (`?` = unstable) then blank lines; `PV` → `Sr 1.06`; `PSN` → `Balance ID: B816716802`.
-- ~90 ms per reply, ~8 readings/s when polled. Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
-=======
-- Cable to its **USB Device** port (square USB-B; USB Host is for flash drives). Inside is an FTDI FT230X serial bridge, no driver: `/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_SCALE_PORT` in `static_gain`), 9600 baud, 8N1.
+### Static Gain (#2)
+`0data.py`: Settings, saved whole in meta.json, and the row dataclasses, whose fields are the CSV columns
+`procedure.py`: the steps; no safety logic of its own
+`analysis.py`: pure: rows in, results with warnings out
+`report.py`: printing, plots
+  
+## Scale
+OHAUS Adventurer AX8201/E, 0.1 g, read by `bench record static-gain` (`--no-scale` to type readings). The driver is `OhausAdventurer` in `bench/hardware/ohaus_adventurer.py`. It's self-contained (pyserial only, raises `OhausError`, which the CLI catches next to `BenchError`) so other projects can copy it; keep it free of `bench` imports. It covers the manual's whole command table; its docstring lists every reply. The manual and datasheet are in `docs/`.
+
+- USB Device with an internal FTDI FT230X serial bridge - the port is`/dev/cu.usbserial-DN04KNBY` (the chip's serial number, so it's fixed; `DEFAULT_SCALE_PORT` in `static_gain`), 9600 baud, 8N1.
 - ASCII commands ending in CR LF. `IP` → `"       32.2     g ?"` then blank lines: `?` = unstable, a trailing `N` = net (tared; the manual says `NET`). Other commands answer `OK!`. Refusals: `ES` unknown command or bad value, `EL` standby, `IP I` busy (calibrating), `IC L` not on this model. `SP` is useless: sent while unstable, it's never answered.
 - ~100 ms per reply, ~8.7 readings/s when polled (`CP` streams ~10.3/s). Read it non-blocking: the hold loop feeds the ODrive watchdog every 20 ms.
->>>>>>> new
+
 
 ## Bench safety (on top of the root rules)
 - Keep torque limits small until the user raises them.
